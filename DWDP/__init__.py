@@ -1,5 +1,5 @@
 """DWDP package root."""
 
-from . import router
+from . import dispatcher, router
 
-__all__ = ["router"]
+__all__ = ["dispatcher", "router"]
