@@ -53,3 +53,25 @@ The scheduler is responsible only for execution planning:
 It does not execute experts, move tensors, launch communication, inspect router output, inspect model weights, or merge outputs.
 
 Detailed engineering documentation is available in [docs/scheduler.md](docs/scheduler.md). A package-local overview is available in [DWDP/scheduler/README.md](DWDP/scheduler/README.md).
+
+## Comms Planner Module
+
+The communication planner package under `DWDP/comms_planner` consumes `ExecutionPlan` and produces `CommunicationPlan`.
+
+The Comms Planner is responsible only for communication planning metadata:
+
+- local and remote expert classification
+- communication graph metadata
+- transfer descriptors
+- communication groups
+- topology metadata
+- dependency metadata
+- synchronization placeholders
+- prefetch placeholders
+- overlap placeholders
+- communication cost estimates
+- communication statistics
+
+It does not execute communication, move tensors, allocate communication buffers, prefetch weights, execute experts, launch CUDA kernels, launch collectives, or mutate Scheduler output.
+
+Detailed engineering documentation is available in [docs/comms_planner.md](docs/comms_planner.md). A package-local overview is available in [DWDP/comms_planner/README.md](DWDP/comms_planner/README.md).
