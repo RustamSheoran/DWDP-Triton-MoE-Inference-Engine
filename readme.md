@@ -34,3 +34,22 @@ The dispatcher consumes completed router output and converts token-major routing
 It does not perform routing, expert execution, communication, scheduling, or output merging.
 
 Detailed engineering documentation is available in [docs/dispatcher.md](docs/dispatcher.md). A package-local overview is available in [DWDP/dispatcher/README.md](DWDP/dispatcher/README.md).
+
+## Scheduler Module
+
+The scheduler package under `DWDP/scheduler` consumes `DispatchPlan` and produces `ExecutionPlan`.
+
+The scheduler is responsible only for execution planning:
+
+- expert execution order
+- expert work queues
+- expert-major execution ranges
+- execution priorities
+- stream assignment placeholders
+- dependency metadata placeholders
+- synchronization metadata placeholders
+- scheduler statistics
+
+It does not execute experts, move tensors, launch communication, inspect router output, inspect model weights, or merge outputs.
+
+Detailed engineering documentation is available in [docs/scheduler.md](docs/scheduler.md). A package-local overview is available in [DWDP/scheduler/README.md](DWDP/scheduler/README.md).
