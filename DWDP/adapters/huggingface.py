@@ -9,16 +9,15 @@ from DWDP.executor import ExpertRegistry
 from DWDP.runtime.config import RuntimeConfig
 
 from .base import BaseModelAdapter
-from .registry import register_adapter
+from .registry import detect_adapter_class, register_adapter
 
 
 class HuggingFaceAdapter(BaseModelAdapter):
     """Hugging Face integration boundary for DWDP.
 
-    The reference adapter preserves the native Hugging Face model for all
-    non-MoE behavior. Explicit MoE component binding is supported through
-    `bind_moe_layer`; model-specific automatic patching is intentionally left
-    to future Qwen/Mixtral/DeepSeek adapters.
+    The base adapter preserves native Hugging Face behavior for unsupported
+    models and delegates supported MoE models to architecture-specific
+    adapters discovered through the adapter registry.
     """
 
     @classmethod
@@ -37,17 +36,29 @@ class HuggingFaceAdapter(BaseModelAdapter):
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
         if load_tokenizer and tokenizer is None:
             tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        adapter_cls = detect_adapter_class(model)
+        if adapter_cls is not None and adapter_cls is not cls:
+            adapter = adapter_cls(model=model, tokenizer=tokenizer, config=runtime_config)
+            adapter.patch_model()
+            return adapter
         return cls(model=model, tokenizer=tokenizer, config=runtime_config)
 
     def create_runtime(self):
         """Create a runtime wrapper around the Hugging Face model.
 
-        If an MoE layer has been explicitly bound, the runtime owns the DWDP
-        modules for that layer. Otherwise the runtime acts as a HF-compatible
-        wrapper and delegates generation to the native model.
+        If the model matches a registered architecture adapter, patch it
+        automatically. If an MoE layer has been explicitly bound, the runtime
+        owns the DWDP modules for that layer. Otherwise the runtime acts as a
+        HF-compatible wrapper and delegates generation to the native model.
         """
 
         from DWDP.runtime.runtime import DWDPRuntime
+
+        adapter_cls = detect_adapter_class(self.model) if self.model is not None else None
+        if adapter_cls is not None and adapter_cls is not type(self):
+            adapter = adapter_cls(model=self.model, tokenizer=self.tokenizer, config=self.config)
+            adapter.patch_model()
+            return adapter.create_runtime()
 
         binding = getattr(self, "_moe_binding", None)
         if binding is None:
@@ -117,6 +128,11 @@ class _DelegatingRuntime(nn.Module):
         """Benchmarking for a delegating wrapper is handled by CLI harnesses."""
 
         raise RuntimeError("DWDP module benchmark requires an explicitly bound MoE layer")
+
+    def restore_model(self) -> int:
+        """Restore patched layers when supported by the active adapter."""
+
+        return self.adapter.restore_model()
 
 
 register_adapter("huggingface", HuggingFaceAdapter)

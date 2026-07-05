@@ -117,3 +117,17 @@ Router -> Dispatcher -> Scheduler -> Comms Planner -> Executor -> Merger
 The runtime owns stage modules and reusable workspaces, exposes a HF-style `DWDPRuntime` API, and provides adapter, profiling, correctness, CLI, and benchmark scaffolding.
 
 Detailed engineering documentation is available in [docs/runtime.md](docs/runtime.md). A package-local overview is available in [DWDP/runtime/README.md](DWDP/runtime/README.md).
+
+## Hugging Face Adapter Layer
+
+The adapter package under `DWDP/adapters` automatically detects supported Hugging Face MoE models and replaces only their MoE blocks with DWDP-backed execution.
+
+The current automatic target is Qwen1.5/Qwen2-style MoE blocks. The adapter preserves native Hugging Face tokenization, attention, KV cache, generation, sampling, checkpoint loading, and non-MoE layers.
+
+Detailed engineering documentation is available in [docs/adapters.md](docs/adapters.md). A package-local overview is available in [DWDP/adapters/README.md](DWDP/adapters/README.md).
+
+## Benchmark Reporting
+
+The benchmark reporting package under `DWDP/benchmarking` provides reproducible experiment directories, structured JSON artifacts, Markdown reports, environment capture, correctness metrics, runtime statistics, and future extension points for long-term performance tracking.
+
+Detailed documentation is available in [docs/benchmark_reporting.md](docs/benchmark_reporting.md).

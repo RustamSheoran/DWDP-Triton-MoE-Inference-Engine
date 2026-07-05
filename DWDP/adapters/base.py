@@ -23,6 +23,16 @@ class BaseModelAdapter(ABC):
     def create_runtime(self):
         """Create a `DWDPRuntime` instance for this adapter."""
 
+    def patch_model(self) -> int:
+        """Patch supported MoE layers in-place and return replacement count."""
+
+        return 0
+
+    def restore_model(self) -> int:
+        """Restore previously patched layers and return replacement count."""
+
+        return 0
+
     def forward(self, *args, **kwargs):
         """Forward to the wrapped model outside explicit MoE layer execution."""
 
