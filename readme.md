@@ -75,3 +75,19 @@ The Comms Planner is responsible only for communication planning metadata:
 It does not execute communication, move tensors, allocate communication buffers, prefetch weights, execute experts, launch CUDA kernels, launch collectives, or mutate Scheduler output.
 
 Detailed engineering documentation is available in [docs/comms_planner.md](docs/comms_planner.md). A package-local overview is available in [DWDP/comms_planner/README.md](DWDP/comms_planner/README.md).
+
+## Executor Module
+
+The executor package under `DWDP/executor` consumes hidden states, `DispatchPlan`, `ExecutionPlan`, and `CommunicationPlan`, then produces `ExecutorOutput`.
+
+The Executor is responsible only for expert computation:
+
+- gather token activations for scheduled expert ranges
+- execute expert modules
+- apply routing weights
+- write packed expert outputs
+- emit metadata required by the future Merger
+
+It does not route, dispatch, schedule, plan communication, execute communication, or merge outputs.
+
+Detailed engineering documentation is available in [docs/executor.md](docs/executor.md). A package-local overview is available in [DWDP/executor/README.md](DWDP/executor/README.md).
