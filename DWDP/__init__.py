@@ -1,5 +1,19 @@
 """DWDP package root."""
 
-from . import comms_planner, dispatcher, executor, merger, router, scheduler
+from . import adapters, comms_planner, dispatcher, executor, integration, merger, profiling, router, runtime, scheduler
+from .runtime import DWDPRuntime, RuntimeConfig
 
-__all__ = ["comms_planner", "dispatcher", "executor", "merger", "router", "scheduler"]
+__all__ = [
+    "DWDPRuntime",
+    "RuntimeConfig",
+    "adapters",
+    "comms_planner",
+    "dispatcher",
+    "executor",
+    "integration",
+    "merger",
+    "profiling",
+    "router",
+    "runtime",
+    "scheduler",
+]

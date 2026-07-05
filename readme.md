@@ -107,3 +107,13 @@ The Merger is responsible only for output reconstruction:
 It does not route, dispatch, schedule, plan communication, execute communication, execute experts, or inspect upstream runtime plans.
 
 Detailed engineering documentation is available in [docs/merger.md](docs/merger.md). A package-local overview is available in [DWDP/merger/README.md](DWDP/merger/README.md).
+
+## Runtime Integration Layer
+
+The runtime integration package under `DWDP/runtime` orchestrates the complete MoE pipeline:
+
+Router -> Dispatcher -> Scheduler -> Comms Planner -> Executor -> Merger
+
+The runtime owns stage modules and reusable workspaces, exposes a HF-style `DWDPRuntime` API, and provides adapter, profiling, correctness, CLI, and benchmark scaffolding.
+
+Detailed engineering documentation is available in [docs/runtime.md](docs/runtime.md). A package-local overview is available in [DWDP/runtime/README.md](DWDP/runtime/README.md).
