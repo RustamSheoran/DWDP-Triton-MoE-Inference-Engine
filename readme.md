@@ -91,3 +91,19 @@ The Executor is responsible only for expert computation:
 It does not route, dispatch, schedule, plan communication, execute communication, or merge outputs.
 
 Detailed engineering documentation is available in [docs/executor.md](docs/executor.md). A package-local overview is available in [DWDP/executor/README.md](DWDP/executor/README.md).
+
+## Merger Module
+
+The merger package under `DWDP/merger` consumes `ExecutorOutput` and reconstructs the final hidden states for the next Transformer layer.
+
+The Merger is responsible only for output reconstruction:
+
+- restore token-major assignment order
+- accumulate Top-K expert outputs
+- optionally apply routing weights
+- reshape back to the original token layout
+- emit merge statistics and metadata
+
+It does not route, dispatch, schedule, plan communication, execute communication, execute experts, or inspect upstream runtime plans.
+
+Detailed engineering documentation is available in [docs/merger.md](docs/merger.md). A package-local overview is available in [DWDP/merger/README.md](DWDP/merger/README.md).
