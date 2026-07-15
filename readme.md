@@ -1,5 +1,157 @@
 There is no GPU available offline in this environment, so avoid CUDA-dependent runs here. Python is available for CPU-only checks and documentation work.
 
+## How To Use
+
+Install the package in editable mode:
+
+```bash
+pip install -e .
+```
+
+Run generation through the installed command:
+
+```bash
+dwdp run --model /path/to/model --backend dwdp --prompt "Hello"
+```
+
+Equivalent module form:
+
+```bash
+python -m dwdp run --model /path/to/model --backend dwdp --prompt "Hello"
+```
+
+Benchmark Hugging Face against DWDP:
+
+```bash
+dwdp benchmark --model /path/to/model --backend hf --compare dwdp
+```
+
+Profile one generation pass:
+
+```bash
+dwdp profile --model /path/to/model --prompt "Hello"
+```
+
+Use the runtime from Python:
+
+```python
+from dwdp import DWDPRuntime
+
+runtime = DWDPRuntime.from_pretrained("/path/to/model")
+output = runtime.generate("Hello")
+```
+
+Wrap an already loaded Hugging Face model:
+
+```python
+from transformers import AutoModelForCausalLM
+from dwdp import DWDPRuntime
+
+model = AutoModelForCausalLM.from_pretrained("/path/to/model")
+runtime = DWDPRuntime.wrap(model)
+```
+
+Bind one explicit MoE layer when you want to build the reference runtime directly:
+
+```python
+runtime = DWDPRuntime.build_reference(
+    hidden_size=4096,
+    num_experts=64,
+    top_k=2,
+    experts=experts,
+)
+```
+
+The command names map directly to the CLI modules:
+
+- `dwdp run` loads a model and calls generation through the runtime wrapper.
+- `dwdp benchmark` runs repeated generation and prints latency and throughput.
+- `dwdp profile` enables the runtime profiler for one pass.
+- `python -m dwdp ...` and `dwdp ...` are equivalent entrypoints; the first runs the package directly and the second uses the installed console script.
+- `DWDPRuntime.wrap(...)` keeps an existing HF model and routes supported MoE work through DWDP.
+- `DWDPRuntime.build_reference(...)` is the lower-level path for explicit expert modules and direct pipeline testing.
+
+## Benchmarking
+
+There are two benchmark paths in this repo.
+
+The CLI path is lightweight:
+
+```bash
+dwdp benchmark --model /path/to/model --backend hf --compare dwdp
+```
+
+It runs repeated generation, prints average latency and tokens/sec, and is meant for quick comparisons.
+
+The reporting package is the reproducible experiment path. It creates a timestamped results directory with Markdown and JSON artifacts:
+
+- `report.md`
+- `report.json`
+- `benchmark_config.json`
+- `environment.json`
+- `profiler.json`
+- `correctness.json`
+- `runtime_statistics.json`
+- `metadata.json`
+
+Typical Python flow:
+
+```python
+from dwdp.benchmarking import (
+    BackendPerformance,
+    BenchmarkConfig,
+    BenchmarkReport,
+    BenchmarkReportWriter,
+    CorrectnessMetrics,
+    EnvironmentMetadata,
+    GenerationConfig,
+    MemoryMetrics,
+    PerformanceComparison,
+    ReportMetadata,
+    RuntimeBreakdown,
+    RuntimeStatistics,
+)
+
+report = BenchmarkReport(
+    metadata=ReportMetadata(experiment_name="qwen15moe_hf_vs_dwdp"),
+    config=BenchmarkConfig(
+        model_name="Qwen/Qwen1.5-MoE-A2.7B",
+        checkpoint="/path/to/model",
+        prompt="Hello",
+        batch_size=1,
+        sequence_length=16,
+        generation=GenerationConfig(max_new_tokens=32),
+        dtype="float16",
+        device="cuda",
+        random_seed=0,
+    ),
+    environment=EnvironmentMetadata(...),
+    performance=PerformanceComparison(
+        huggingface=BackendPerformance(
+            backend="hf",
+            tokens_per_second=12.3,
+            memory=MemoryMetrics(),
+        ),
+        dwdp=BackendPerformance(
+            backend="dwdp",
+            tokens_per_second=18.7,
+            memory=MemoryMetrics(),
+        ),
+        runtime_breakdown=RuntimeBreakdown(),
+    ),
+    correctness=CorrectnessMetrics(torch_allclose=True),
+    runtime_statistics=RuntimeStatistics(),
+)
+
+BenchmarkReportWriter(results_root="results").write(report)
+```
+
+Why the two paths exist:
+
+- `dwdp benchmark` is for quick timing while you are iterating.
+- `DWDP.benchmarking` is for full reports, saved artifacts, and later analysis.
+- The reporting layer does not execute the benchmark itself; it writes the data you collected from your harness.
+
 ## Router Module
 
 The repository now includes a production-oriented MoE router package under `DWDP/router`.
