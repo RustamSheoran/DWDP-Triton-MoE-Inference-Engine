@@ -36,6 +36,57 @@ cd DWDP-Triton-MoE-Inference-Engine
 bash scripts/benchmark_colab.sh
 ```
 
+Equivalent Colab notebook cells:
+
+```python
+!git clone https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git
+%cd DWDP-Triton-MoE-Inference-Engine
+!bash scripts/benchmark_colab.sh
+```
+
+If the repository is already cloned in the current Colab runtime, use:
+
+```python
+%cd /content/DWDP-Triton-MoE-Inference-Engine
+!bash scripts/benchmark_colab.sh
+```
+
+For a private or gated Hugging Face model, add a secret named `HF_TOKEN` under **Colab Secrets** and enable notebook access. The script reads it automatically, so the only benchmark command is:
+
+```python
+!bash scripts/benchmark_colab.sh
+```
+
+The token provides authentication for Hugging Face downloads; download speed still depends on Colab/Hugging Face network conditions. Hugging Face model files are cached after the first run.
+
+You can also pass a token directly, although it may be saved in notebook history:
+
+```python
+!bash scripts/benchmark_colab.sh --use "hf_your_token_here"
+```
+
+The default command runs the full benchmark and profiler. To skip the extra profiler pass:
+
+```python
+!bash scripts/benchmark_colab.sh --no-profile
+```
+
+After completion, list the generated report folders:
+
+```python
+!find results -maxdepth 2 -type f | sort
+```
+
+Download the latest Markdown report:
+
+```python
+from google.colab import files
+from pathlib import Path
+
+reports = sorted(Path("results").glob("*/report.md"))
+files.download(str(reports[-1]))
+```
+
 The script installs the required packages, loads `Qwen/Qwen1.5-MoE-A2.7B` with 4-bit NF4 bitsandbytes quantization, and benchmarks both the native Transformers implementation and the DWDP-patched implementation. It uses the same prompt and generation settings for both runs, unloads the first model before loading the second, and prints latency, tokens/sec, and sample output.
 
 Every run also creates a timestamped report directory, for example `results/2026-07-19_12-34-56_qwen_qwen1.5-moe-a2.7b_hf_vs_dwdp_tesla_t4/`. The directory contains `report.md`, `report.json`, `benchmark_config.json`, `environment.json`, `correctness.json`, `runtime_statistics.json`, `profiler.json`, and metadata. The folder name records the run date/time, model, backend comparison, and detected GPU.
@@ -48,6 +99,30 @@ Use a custom prompt or change the benchmark length:
 bash scripts/benchmark_colab.sh \
   --prompt "Explain mixture-of-experts inference in one paragraph." \
   --max-new-tokens 64 --warmup 2 --iters 5
+```
+
+For private or gated Hugging Face models, provide a token through the Colab environment or command line. `--use` is accepted as a short alias:
+
+```bash
+export HF_TOKEN="hf_..."
+bash scripts/benchmark_colab.sh
+
+# Or pass it directly (the token may be visible in shell history):
+bash scripts/benchmark_colab.sh --use "hf_..."
+```
+
+Detailed profiling is enabled by default and runs one extra generation pass for both backends:
+
+```bash
+bash scripts/benchmark_colab.sh
+```
+
+The profiling report summarizes Python/orchestration labels, dispatcher, gather/index operations, GEMM-heavy expert work, tensor copies, synchronization, and the top Torch operators. It is written to `profiler.json` inside the timestamped report directory. Python time is represented by CPU-side profiler time; exact Python-vs-CUDA attribution requires a separate Nsight Systems trace.
+
+Skip the profiling pass only when you need a faster run:
+
+```bash
+bash scripts/benchmark_colab.sh --no-profile
 ```
 
 The default 4-bit mode is intended for a 16 GB T4. An 8-bit run is available when there is enough free VRAM:

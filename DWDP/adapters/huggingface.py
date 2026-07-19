@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+import torch
 from torch import nn
 
 from DWDP.executor import ExpertRegistry
@@ -111,7 +112,10 @@ class _DelegatingRuntime(nn.Module):
     def generate(self, *args, **kwargs):
         """Delegate generation to Hugging Face."""
 
-        return self.adapter.generate(*args, **kwargs)
+        # This outer label captures CPU-side orchestration not attributed to a
+        # more specific DWDP stage in Torch profiler output.
+        with torch.autograd.profiler.record_function("dwdp.python_orchestration"):
+            return self.adapter.generate(*args, **kwargs)
 
     def compile(self):
         """Return self; native model compilation is left to the caller."""

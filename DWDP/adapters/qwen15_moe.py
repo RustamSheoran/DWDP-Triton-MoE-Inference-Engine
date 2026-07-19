@@ -117,10 +117,11 @@ class DWDPMoEBlock(nn.Module):
         del args, kwargs
         workspaces = self.context.workspaces
         router_output = self.router(hidden_states)
-        dispatch_plan = self.dispatcher(
-            router_output,
-            workspace=workspaces.dispatch if workspaces is not None else None,
-        )
+        with torch.autograd.profiler.record_function("dwdp.dispatcher"):
+            dispatch_plan = self.dispatcher(
+                router_output,
+                workspace=workspaces.dispatch if workspaces is not None else None,
+            )
         execution_plan = self.scheduler(
             dispatch_plan,
             workspace=workspaces.scheduler if workspaces is not None else None,

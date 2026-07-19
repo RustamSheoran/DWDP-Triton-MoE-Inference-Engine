@@ -20,4 +20,5 @@ if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
   "${PYTHON_BIN}" -m pip install -q -e "${REPO_ROOT}"
 fi
 
+cd -- "${REPO_ROOT}"
 exec "${PYTHON_BIN}" "${SCRIPT_DIR}/benchmark_colab.py" "$@"

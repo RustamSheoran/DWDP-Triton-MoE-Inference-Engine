@@ -213,15 +213,16 @@ class PyTorchExecutor(BaseExecutor):
         *,
         workspace: ExecutorWorkspace | None,
     ) -> torch.Tensor:
-        if workspace is None:
-            return gather_expert_inputs(flat_hidden_states, token_indices)
-        buffer = workspace.get_gather_buffer(
-            token_indices.numel(),
-            flat_hidden_states.shape[-1],
-            dtype=flat_hidden_states.dtype,
-            device=flat_hidden_states.device,
-        )
-        return gather_expert_inputs(flat_hidden_states, token_indices, out=buffer)
+        with torch.autograd.profiler.record_function("dwdp.gather"):
+            if workspace is None:
+                return gather_expert_inputs(flat_hidden_states, token_indices)
+            buffer = workspace.get_gather_buffer(
+                token_indices.numel(),
+                flat_hidden_states.shape[-1],
+                dtype=flat_hidden_states.dtype,
+                device=flat_hidden_states.device,
+            )
+            return gather_expert_inputs(flat_hidden_states, token_indices, out=buffer)
 
     def _execute_expert(
         self,
@@ -230,7 +231,8 @@ class PyTorchExecutor(BaseExecutor):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         del context
         expert = self.experts.get(batch.expert_id)
-        expert_outputs = expert(batch.hidden_states)
+        with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
+            expert_outputs = expert(batch.hidden_states)
         if expert_outputs.ndim != 2:
             raise ValueError("Expert outputs must be rank-2 [tokens, output_dim]")
         weighted_outputs = apply_routing_weights(expert_outputs, batch.routing_weights)

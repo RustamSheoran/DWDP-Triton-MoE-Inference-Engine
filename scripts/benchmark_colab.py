@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--iters", type=int, default=5)
     parser.add_argument("--quantization", choices=("4bit", "8bit"), default="4bit")
+    parser.add_argument("--hf-token", "--use", dest="hf_token", default=None, help="Hugging Face token; also read from HF_TOKEN.")
+    profile_group = parser.add_mutually_exclusive_group()
+    profile_group.add_argument(
+        "--profile",
+        dest="profile",
+        action="store_true",
+        default=True,
+        help="Collect the detailed Torch profiler pass (default).",
+    )
+    profile_group.add_argument(
+        "--no-profile",
+        dest="profile",
+        action="store_false",
+        help="Skip detailed profiling for a faster benchmark.",
+    )
     parser.add_argument("--results-root", default="results", help="Directory for timestamped benchmark reports.")
     parser.add_argument("--output-json", default=None, help="Optional path for machine-readable results.")
     args = parser.parse_args()
@@ -60,17 +76,36 @@ def quantization_config(mode: str) -> BitsAndBytesConfig:
     return BitsAndBytesConfig(load_in_8bit=True)
 
 
-def load_kwargs(mode: str) -> dict[str, Any]:
-    return {
+def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
         "quantization_config": quantization_config(mode),
         "device_map": "auto",
         "torch_dtype": torch.float16,
         "low_cpu_mem_usage": True,
     }
+    if token:
+        kwargs["token"] = token
+    return kwargs
 
 
 def input_device(model: Any) -> torch.device:
     return next(model.parameters()).device
+
+
+def resolve_hf_token(explicit_token: str | None) -> str | None:
+    """Resolve a token from CLI, environment, or Colab Secrets."""
+
+    if explicit_token:
+        return explicit_token
+    environment_token = os.environ.get("HF_TOKEN")
+    if environment_token:
+        return environment_token
+    try:
+        from google.colab import userdata
+
+        return userdata.get("HF_TOKEN") or None
+    except Exception:
+        return None
 
 
 def make_inputs(tokenizer: Any, model: Any, prompt: str) -> dict[str, torch.Tensor]:
@@ -87,7 +122,58 @@ def make_inputs(tokenizer: Any, model: Any, prompt: str) -> dict[str, torch.Tens
 
 def synchronize() -> None:
     if torch.cuda.is_available():
-        torch.cuda.synchronize()
+        with torch.autograd.profiler.record_function("benchmark.synchronization"):
+            torch.cuda.synchronize()
+
+
+def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> dict[str, Any]:
+    """Collect a one-generation Torch profiler summary by useful categories."""
+
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if torch.cuda.is_available():
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
+    inputs = make_inputs(tokenizer, model, args.prompt)
+    with torch.inference_mode(), torch.profiler.profile(
+        activities=activities,
+        record_shapes=False,
+        profile_memory=True,
+    ) as profiler:
+        model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
+
+    categories = {
+        "python_orchestration": ("dwdp.python_orchestration",),
+        "dispatcher": ("dwdp.dispatcher",),
+        "gather": ("dwdp.gather", "aten::index", "aten::index_select"),
+        "gemms": ("dwdp.expert_gemms", "aten::mm", "aten::addmm", "aten::bmm", "aten::matmul"),
+        "copies": ("aten::copy_", "aten::_to_copy", "aten::to"),
+        "synchronization": ("benchmark.synchronization", "cuda_synchronize"),
+    }
+    summary: dict[str, Any] = {}
+    events = profiler.key_averages()
+    for category, patterns in categories.items():
+        matching = [event for event in events if any(pattern in event.key.lower() for pattern in patterns)]
+        summary[category] = {
+            "cpu_ms": sum(float(getattr(event, "self_cpu_time_total", 0.0)) for event in matching) / 1000.0,
+            "device_ms": sum(
+                float(getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0)))
+                for event in matching
+            )
+            / 1000.0,
+            "operators": sorted({event.key for event in matching}),
+        }
+    summary["top_operators"] = [
+        {
+            "operator": event.key,
+            "self_cpu_ms": float(getattr(event, "self_cpu_time_total", 0.0)) / 1000.0,
+            "self_device_ms": float(
+                getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0))
+            )
+            / 1000.0,
+            "calls": int(event.count),
+        }
+        for event in sorted(events, key=lambda item: float(getattr(item, "self_cpu_time_total", 0.0)), reverse=True)[:30]
+    ]
+    return summary
 
 
 def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, Any], str, list[int]]:
@@ -136,18 +222,22 @@ def main() -> None:
     print(f"model={args.model}")
     print(f"quantization={args.quantization}")
     print(f"gpu={torch.cuda.get_device_name(0)}")
+    token = resolve_hf_token(args.hf_token)
     print(f"prompt={args.prompt!r}")
+    print(f"hf_token={'provided' if token else 'not provided'}")
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    tokenizer_kwargs = {"token": token} if token else {}
+    tokenizer = AutoTokenizer.from_pretrained(args.model, **tokenizer_kwargs)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     print("\nLoading native Hugging Face model...")
     hf_load_start = time.perf_counter()
-    hf_model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs(args.quantization))
+    hf_model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs(args.quantization, token))
     hf_load_time_ms = (time.perf_counter() - hf_load_start) * 1e3
     hf_model.eval()
     hf_metrics, hf_text, hf_token_ids = benchmark(hf_model, tokenizer, args)
+    hf_profile = profile_generation(hf_model, tokenizer, args) if args.profile else {}
     print(f"hf_latency_ms={hf_metrics['latency_ms']:.2f}")
     print(f"hf_tokens_per_second={hf_metrics['tokens_per_second']:.2f}")
     print(f"hf_output={hf_text!r}")
@@ -161,11 +251,12 @@ def main() -> None:
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
         config=RuntimeConfig(backend="dwdp", device="cuda", dtype=torch.float16),
-        **load_kwargs(args.quantization),
+        **load_kwargs(args.quantization, token),
     )
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
     dwdp_metrics, dwdp_text, dwdp_token_ids = benchmark(dwdp_runtime, tokenizer, args)
+    dwdp_profile = profile_generation(dwdp_runtime, tokenizer, args) if args.profile else {}
     print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}")
     print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}")
     print(f"dwdp_output={dwdp_text!r}")
@@ -243,6 +334,9 @@ def main() -> None:
             "dwdp_load_time_ms": dwdp_load_time_ms,
             "hf_output": hf_text,
             "dwdp_output": dwdp_text,
+            "torch_profiler_enabled": args.profile,
+            "hf": hf_profile,
+            "dwdp": dwdp_profile,
         },
     )
     report_paths = BenchmarkReportWriter(results_root=args.results_root).write(report)
