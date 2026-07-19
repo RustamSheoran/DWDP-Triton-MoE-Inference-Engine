@@ -1,0 +1,28 @@
+{
+  "backend": "hf",
+  "batch_size": 1,
+  "checkpoint": "Qwen/Qwen1.5-MoE-A2.7B",
+  "compare_backend": "dwdp",
+  "compile_mode": null,
+  "device": "cuda",
+  "dtype": "float16_compute",
+  "generation": {
+    "do_sample": false,
+    "max_new_tokens": 32,
+    "temperature": 1.0,
+    "top_k": null,
+    "top_p": null
+  },
+  "model_name": "Qwen/Qwen1.5-MoE-A2.7B",
+  "prompt": "Who are you?",
+  "random_seed": 0,
+  "runtime_backend": "dwdp_reference",
+  "runtime_config": {
+    "device_map": "auto",
+    "quantization": "4bit"
+  },
+  "sampling_config": {},
+  "sequence_length": 22,
+  "torch_compile": false,
+  "workspace_enabled": true
+}
