@@ -128,6 +128,9 @@ def main() -> None:
     print(f"hf_tokens_per_second={hf_metrics['tokens_per_second']:.2f}")
     print(f"hf_output={hf_text!r}")
     release(hf_model)
+    # release() clears CUDA's allocator, but the caller must also drop its
+    # reference or Python will keep the model (and its VRAM allocations) alive.
+    hf_model = None
 
     print("\nLoading DWDP-patched model...")
     dwdp_runtime = DWDPRuntime.from_pretrained(
