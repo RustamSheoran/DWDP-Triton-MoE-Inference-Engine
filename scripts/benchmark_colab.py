@@ -335,7 +335,13 @@ def main() -> None:
         backend="hf",
         compare_backend="dwdp",
         runtime_backend="dwdp_reference",
-        runtime_config={"quantization": args.quantization, "device_map": "auto"},
+        runtime_config={
+            "quantization": args.quantization,
+            "device_map": "auto",
+            "warmup_iterations": args.warmup,
+            "timed_iterations": args.iters,
+            "profiling_enabled": args.profile,
+        },
     )
     stage_names = ("router", "dispatcher", "scheduler", "comms_planner", "executor", "merger")
     stage_values = {name: profiled_cpu_ms(dwdp_profile, name) for name in stage_names}
