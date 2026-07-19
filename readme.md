@@ -26,6 +26,40 @@ Benchmark Hugging Face against DWDP:
 dwdp benchmark --model /path/to/model --backend hf --compare dwdp
 ```
 
+### Google Colab T4 benchmark
+
+For a real-model comparison on a Colab T4, select **Runtime > Change runtime type > T4 GPU**, clone this repository, and run:
+
+```bash
+git clone https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git
+cd DWDP-Triton-MoE-Inference-Engine
+bash scripts/benchmark_colab.sh
+```
+
+The script installs the required packages, loads `Qwen/Qwen1.5-MoE-A2.7B` with 4-bit NF4 bitsandbytes quantization, and benchmarks both the native Transformers implementation and the DWDP-patched implementation. It uses the same prompt and generation settings for both runs, unloads the first model before loading the second, and prints latency, tokens/sec, and sample output.
+
+Use a custom prompt or change the benchmark length:
+
+```bash
+bash scripts/benchmark_colab.sh \
+  --prompt "Explain mixture-of-experts inference in one paragraph." \
+  --max-new-tokens 64 --warmup 2 --iters 5
+```
+
+The default 4-bit mode is intended for a 16 GB T4. An 8-bit run is available when there is enough free VRAM:
+
+```bash
+bash scripts/benchmark_colab.sh --quantization 8bit
+```
+
+Save the machine-readable result as well as the console output:
+
+```bash
+bash scripts/benchmark_colab.sh --output-json results/colab_t4.json
+```
+
+To rerun without reinstalling packages, use `SKIP_INSTALL=1`. The script requires CUDA and is expected to be run on a Colab GPU, not in a CPU-only checkout.
+
 Profile one generation pass:
 
 ```bash

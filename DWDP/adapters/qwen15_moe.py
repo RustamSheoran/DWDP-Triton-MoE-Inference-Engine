@@ -20,6 +20,20 @@ from .patcher import ModulePatcher
 from .registry import register_adapter, register_model_adapter
 
 
+class _HFProjectionRouter(LinearTopKRouter):
+    """Use the original HF projection when its weights are bitsandbytes-packed."""
+
+    def __init__(self, config: RouterConfig, projection: nn.Module) -> None:
+        super().__init__(config)
+        self.projection = projection
+
+    def compute_router_logits(self, flat_hidden_states: torch.Tensor) -> torch.Tensor:
+        router_logits = self.projection(flat_hidden_states)
+        if self.config.score_scale != 1.0:
+            router_logits = router_logits * self.config.score_scale
+        return router_logits
+
+
 class DWDPMoEBlock(nn.Module):
     """Hugging Face MoE block replacement backed by the DWDP pipeline."""
 
@@ -32,19 +46,24 @@ class DWDPMoEBlock(nn.Module):
         self.config = config
         self.returns_router_logits = spec.returns_router_logits
 
-        self.router = LinearTopKRouter(
-            RouterConfig(
-                hidden_size=spec.hidden_size,
-                num_experts=spec.num_experts,
-                top_k=spec.top_k,
-                bias=spec.gate.bias is not None,
-                topk_sorted=False,
-                renormalize=bool(getattr(spec.module, "norm_topk_prob", True)),
-            )
+        router_config = RouterConfig(
+            hidden_size=spec.hidden_size,
+            num_experts=spec.num_experts,
+            top_k=spec.top_k,
+            bias=spec.gate.bias is not None,
+            topk_sorted=False,
+            renormalize=bool(getattr(spec.module, "norm_topk_prob", True)),
         )
-        self.router.weight = spec.gate.weight
-        if spec.gate.bias is not None:
-            self.router.bias = spec.gate.bias
+        if torch.is_floating_point(spec.gate.weight):
+            self.router = LinearTopKRouter(router_config)
+            self.router.weight = spec.gate.weight
+            if spec.gate.bias is not None:
+                self.router.bias = spec.gate.bias
+        else:
+            # A bitsandbytes Linear4bit/Linear8bit weight cannot be passed to
+            # torch.nn.functional.linear directly. Keep the HF projection so
+            # bitsandbytes performs the dequantization during the matmul.
+            self.router = _HFProjectionRouter(router_config, spec.gate)
 
         self.shared_expert = getattr(spec.module, "shared_expert", None)
         self.shared_expert_gate = getattr(spec.module, "shared_expert_gate", None)
