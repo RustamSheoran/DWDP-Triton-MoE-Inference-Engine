@@ -1,0 +1,19 @@
+{
+  "model": "Qwen/Qwen1.5-MoE-A2.7B",
+  "quantization": "4bit",
+  "prompt": "Who are you?",
+  "max_new_tokens": 32,
+  "warmup": 2,
+  "iters": 5,
+  "gpu": "Tesla T4",
+  "hf": {
+    "latency_ms": 6004.452595599969,
+    "tokens_per_second": 5.32937840552683,
+    "output": "I am a helpful assistant that can answer questions and provide information on a wide range of topics. I am here to assist you in any way I can. If"
+  },
+  "dwdp": {
+    "latency_ms": 7231.796807399996,
+    "tokens_per_second": 4.424903084563401,
+    "output": "I am a helpful assistant that can answer questions and provide information on a wide range of topics. I am here to assist you in any way I can. If"
+  }
+}

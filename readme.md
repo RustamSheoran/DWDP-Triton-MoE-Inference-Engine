@@ -38,6 +38,10 @@ bash scripts/benchmark_colab.sh
 
 The script installs the required packages, loads `Qwen/Qwen1.5-MoE-A2.7B` with 4-bit NF4 bitsandbytes quantization, and benchmarks both the native Transformers implementation and the DWDP-patched implementation. It uses the same prompt and generation settings for both runs, unloads the first model before loading the second, and prints latency, tokens/sec, and sample output.
 
+Every run also creates a timestamped report directory, for example `results/2026-07-19_12-34-56_qwen_qwen1.5-moe-a2.7b_hf_vs_dwdp_tesla_t4/`. The directory contains `report.md`, `report.json`, `benchmark_config.json`, `environment.json`, `correctness.json`, `runtime_statistics.json`, `profiler.json`, and metadata. The folder name records the run date/time, model, backend comparison, and detected GPU.
+
+Existing benchmark snapshots are kept under `results/` by date and GPU, and future benchmark reports should remain in that directory.
+
 Use a custom prompt or change the benchmark length:
 
 ```bash
@@ -52,7 +56,7 @@ The default 4-bit mode is intended for a 16 GB T4. An 8-bit run is available whe
 bash scripts/benchmark_colab.sh --quantization 8bit
 ```
 
-Save the machine-readable result as well as the console output:
+The full report is written automatically. To also save a compact machine-readable summary at a custom path:
 
 ```bash
 bash scripts/benchmark_colab.sh --output-json results/colab_t4.json

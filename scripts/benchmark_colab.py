@@ -17,6 +17,19 @@ from typing import Any
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
+from DWDP.benchmarking import (
+    BackendPerformance,
+    BenchmarkConfig,
+    BenchmarkReport,
+    BenchmarkReportWriter,
+    CorrectnessMetrics,
+    GenerationConfig,
+    MemoryMetrics,
+    PerformanceComparison,
+    ReportMetadata,
+    RuntimeStatistics,
+)
+from DWDP.benchmarking.environment import collect_environment_metadata
 from DWDP.runtime import DWDPRuntime, RuntimeConfig
 
 
@@ -28,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--iters", type=int, default=5)
     parser.add_argument("--quantization", choices=("4bit", "8bit"), default="4bit")
+    parser.add_argument("--results-root", default="results", help="Directory for timestamped benchmark reports.")
     parser.add_argument("--output-json", default=None, help="Optional path for machine-readable results.")
     args = parser.parse_args()
     if args.max_new_tokens <= 0 or args.warmup < 0 or args.iters <= 0:
@@ -76,9 +90,11 @@ def synchronize() -> None:
         torch.cuda.synchronize()
 
 
-def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, float], str]:
+def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, Any], str, list[int]]:
     inputs = make_inputs(tokenizer, model, args.prompt)
     generation_kwargs = {"max_new_tokens": args.max_new_tokens, "do_sample": False}
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
 
     with torch.inference_mode():
         for _ in range(args.warmup):
@@ -93,10 +109,16 @@ def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dic
     latency = (time.perf_counter() - start) / args.iters
     generated = output_ids[0, inputs["input_ids"].shape[-1] :]
     text = tokenizer.decode(generated, skip_special_tokens=True)
-    return {
+    metrics = {
         "latency_ms": latency * 1e3,
-        "tokens_per_second": args.max_new_tokens / latency,
-    }, text
+        "tokens_per_second": generated.numel() / latency,
+        "input_tokens": inputs["input_ids"].shape[-1],
+        "generated_tokens": generated.numel(),
+        "peak_gpu_memory_bytes": (
+            torch.cuda.max_memory_allocated() if torch.cuda.is_available() else None
+        ),
+    }
+    return metrics, text, generated.detach().cpu().tolist()
 
 
 def release(model: Any) -> None:
@@ -121,9 +143,11 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
 
     print("\nLoading native Hugging Face model...")
+    hf_load_start = time.perf_counter()
     hf_model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs(args.quantization))
+    hf_load_time_ms = (time.perf_counter() - hf_load_start) * 1e3
     hf_model.eval()
-    hf_metrics, hf_text = benchmark(hf_model, tokenizer, args)
+    hf_metrics, hf_text, hf_token_ids = benchmark(hf_model, tokenizer, args)
     print(f"hf_latency_ms={hf_metrics['latency_ms']:.2f}")
     print(f"hf_tokens_per_second={hf_metrics['tokens_per_second']:.2f}")
     print(f"hf_output={hf_text!r}")
@@ -133,13 +157,15 @@ def main() -> None:
     hf_model = None
 
     print("\nLoading DWDP-patched model...")
+    dwdp_load_start = time.perf_counter()
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
         config=RuntimeConfig(backend="dwdp", device="cuda", dtype=torch.float16),
         **load_kwargs(args.quantization),
     )
+    dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
-    dwdp_metrics, dwdp_text = benchmark(dwdp_runtime, tokenizer, args)
+    dwdp_metrics, dwdp_text, dwdp_token_ids = benchmark(dwdp_runtime, tokenizer, args)
     print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}")
     print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}")
     print(f"dwdp_output={dwdp_text!r}")
@@ -155,6 +181,72 @@ def main() -> None:
         "hf": {**hf_metrics, "output": hf_text},
         "dwdp": {**dwdp_metrics, "output": dwdp_text},
     }
+
+    environment = collect_environment_metadata(
+        runtime_backend="dwdp_reference",
+        precision=args.quantization,
+        torch_compile=False,
+    )
+    report_config = BenchmarkConfig(
+        model_name=args.model,
+        checkpoint=args.model,
+        prompt=args.prompt,
+        batch_size=1,
+        sequence_length=int(hf_metrics["input_tokens"]),
+        generation=GenerationConfig(max_new_tokens=args.max_new_tokens, do_sample=False),
+        dtype="float16_compute",
+        device="cuda",
+        random_seed=0,
+        backend="hf",
+        compare_backend="dwdp",
+        runtime_backend="dwdp_reference",
+        runtime_config={"quantization": args.quantization, "device_map": "auto"},
+    )
+    report = BenchmarkReport(
+        metadata=ReportMetadata(
+            experiment_name="colab_hf_vs_dwdp",
+            notes=(
+                "Native Transformers and DWDP used the same prompt and generation settings.",
+                "DWDP is measured through the current Hugging Face adapter/reference PyTorch path.",
+            ),
+            tags=("colab", "quantized", args.quantization),
+        ),
+        config=report_config,
+        environment=environment,
+        performance=PerformanceComparison(
+            huggingface=BackendPerformance(
+                backend="hf",
+                tokens_per_second=hf_metrics["tokens_per_second"],
+                total_runtime_ms=hf_metrics["latency_ms"],
+                memory=MemoryMetrics(peak_gpu_memory_bytes=hf_metrics["peak_gpu_memory_bytes"]),
+            ),
+            dwdp=BackendPerformance(
+                backend="dwdp",
+                tokens_per_second=dwdp_metrics["tokens_per_second"],
+                total_runtime_ms=dwdp_metrics["latency_ms"],
+                memory=MemoryMetrics(peak_gpu_memory_bytes=dwdp_metrics["peak_gpu_memory_bytes"]),
+            ),
+        ),
+        correctness=CorrectnessMetrics(
+            generated_token_parity=hf_token_ids == dwdp_token_ids,
+        ),
+        runtime_statistics=RuntimeStatistics(
+            future_extensions={
+                "hf_load_time_ms": hf_load_time_ms,
+                "dwdp_load_time_ms": dwdp_load_time_ms,
+                "input_tokens": hf_metrics["input_tokens"],
+                "generated_tokens": hf_metrics["generated_tokens"],
+            }
+        ),
+        profiler={
+            "hf_load_time_ms": hf_load_time_ms,
+            "dwdp_load_time_ms": dwdp_load_time_ms,
+            "hf_output": hf_text,
+            "dwdp_output": dwdp_text,
+        },
+    )
+    report_paths = BenchmarkReportWriter(results_root=args.results_root).write(report)
+    print(f"results_dir={report_paths.root}")
     if args.output_json:
         output_path = Path(args.output_json)
         output_path.parent.mkdir(parents=True, exist_ok=True)
