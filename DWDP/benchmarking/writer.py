@@ -13,11 +13,14 @@ class BenchmarkReportWriter:
     """Writes benchmark reports and sidecar artifacts to disk."""
 
     results_root: str | Path = "results"
+    run_suffix: str | None = None
 
     def create_paths(self, report: BenchmarkReport) -> ExperimentPaths:
         """Create a fresh experiment directory for `report`."""
 
         hardware = report.environment.gpu_model or "unknown_hw"
+        if self.run_suffix:
+            hardware = f"{hardware}_{self.run_suffix}"
         return create_experiment(
             results_root=self.results_root,
             model_name=report.config.model_name,

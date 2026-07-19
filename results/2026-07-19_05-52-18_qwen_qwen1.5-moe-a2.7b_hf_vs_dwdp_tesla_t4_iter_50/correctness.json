@@ -1,0 +1,12 @@
+{
+  "cosine_similarity": null,
+  "executor_output_parity": null,
+  "generated_token_parity": true,
+  "layer_output_parity": null,
+  "max_absolute_error": null,
+  "mean_absolute_error": null,
+  "merger_output_parity": null,
+  "relative_error": null,
+  "router_output_parity": null,
+  "torch_allclose": null
+}

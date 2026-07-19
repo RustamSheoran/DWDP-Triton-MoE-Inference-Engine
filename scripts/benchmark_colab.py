@@ -426,7 +426,10 @@ def main() -> None:
             "Prefill is prompt-only forward latency; TTFT is one-token generation latency; decode is total latency minus TTFT.",
         ),
     )
-    report_paths = BenchmarkReportWriter(results_root=args.results_root).write(report)
+    report_paths = BenchmarkReportWriter(
+        results_root=args.results_root,
+        run_suffix=f"iter_{args.iters}",
+    ).write(report)
     print(f"results_dir={report_paths.root}")
     if args.output_json:
         output_path = Path(args.output_json)
