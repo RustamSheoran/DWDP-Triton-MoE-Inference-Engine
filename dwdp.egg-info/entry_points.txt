@@ -1,0 +1,2 @@
+[console_scripts]
+dwdp = DWDP.cli.main:main

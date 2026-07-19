@@ -1,6 +1,9 @@
 """DWDP package root."""
 
 from . import (
+    # Import runtime first: adapter modules depend on runtime.config and
+    # importing adapters before runtime creates a package initialization cycle.
+    runtime,
     adapters,
     benchmarking,
     comms_planner,
@@ -10,7 +13,6 @@ from . import (
     merger,
     profiling,
     router,
-    runtime,
     scheduler,
 )
 from .runtime import DWDPRuntime, RuntimeConfig
