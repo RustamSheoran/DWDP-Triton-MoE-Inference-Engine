@@ -116,31 +116,36 @@ class DWDPMoEBlock(nn.Module):
 
         del args, kwargs
         workspaces = self.context.workspaces
-        router_output = self.router(hidden_states)
+        with torch.autograd.profiler.record_function("dwdp.router"):
+            router_output = self.router(hidden_states)
         with torch.autograd.profiler.record_function("dwdp.dispatcher"):
             dispatch_plan = self.dispatcher(
                 router_output,
                 workspace=workspaces.dispatch if workspaces is not None else None,
             )
-        execution_plan = self.scheduler(
-            dispatch_plan,
-            workspace=workspaces.scheduler if workspaces is not None else None,
-        )
-        communication_plan = self.comms_planner(
-            execution_plan,
-            workspace=workspaces.comms if workspaces is not None else None,
-        )
-        executor_output = self.executor(
-            hidden_states,
-            dispatch_plan,
-            execution_plan,
-            communication_plan,
-            workspace=workspaces.executor if workspaces is not None else None,
-        )
-        merger_output = self.merger(
-            executor_output,
-            workspace=workspaces.merger if workspaces is not None else None,
-        )
+        with torch.autograd.profiler.record_function("dwdp.scheduler"):
+            execution_plan = self.scheduler(
+                dispatch_plan,
+                workspace=workspaces.scheduler if workspaces is not None else None,
+            )
+        with torch.autograd.profiler.record_function("dwdp.comms_planner"):
+            communication_plan = self.comms_planner(
+                execution_plan,
+                workspace=workspaces.comms if workspaces is not None else None,
+            )
+        with torch.autograd.profiler.record_function("dwdp.executor"):
+            executor_output = self.executor(
+                hidden_states,
+                dispatch_plan,
+                execution_plan,
+                communication_plan,
+                workspace=workspaces.executor if workspaces is not None else None,
+            )
+        with torch.autograd.profiler.record_function("dwdp.merger"):
+            merger_output = self.merger(
+                executor_output,
+                workspace=workspaces.merger if workspaces is not None else None,
+            )
         output = merger_output.hidden_states
 
         if self.shared_expert is not None:

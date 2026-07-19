@@ -28,6 +28,7 @@ from DWDP.benchmarking import (
     MemoryMetrics,
     PerformanceComparison,
     ReportMetadata,
+    RuntimeBreakdown,
     RuntimeStatistics,
 )
 from DWDP.benchmarking.environment import collect_environment_metadata
@@ -142,7 +143,12 @@ def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> 
 
     categories = {
         "python_orchestration": ("dwdp.python_orchestration",),
+        "router": ("dwdp.router",),
         "dispatcher": ("dwdp.dispatcher",),
+        "scheduler": ("dwdp.scheduler",),
+        "comms_planner": ("dwdp.comms_planner",),
+        "executor": ("dwdp.executor",),
+        "merger": ("dwdp.merger",),
         "gather": ("dwdp.gather", "aten::index", "aten::index_select"),
         "gemms": ("dwdp.expert_gemms", "aten::mm", "aten::addmm", "aten::bmm", "aten::matmul"),
         "copies": ("aten::copy_", "aten::_to_copy", "aten::to"),
@@ -176,11 +182,46 @@ def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> 
     return summary
 
 
+def measure_prefill(model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace) -> float:
+    """Measure prompt-only forward latency, excluding token sampling/decoding."""
+
+    with torch.inference_mode():
+        for _ in range(args.warmup):
+            model(**inputs, use_cache=True, return_dict=True)
+        synchronize()
+        start = time.perf_counter()
+        for _ in range(args.iters):
+            model(**inputs, use_cache=True, return_dict=True)
+        synchronize()
+    return (time.perf_counter() - start) * 1e3 / args.iters
+
+
+def measure_ttft(model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace) -> float:
+    """Measure time to generate the first token (prefill plus first decode)."""
+
+    with torch.inference_mode():
+        for _ in range(args.warmup):
+            model.generate(**inputs, max_new_tokens=1, do_sample=False)
+        synchronize()
+        start = time.perf_counter()
+        for _ in range(args.iters):
+            model.generate(**inputs, max_new_tokens=1, do_sample=False)
+        synchronize()
+    return (time.perf_counter() - start) * 1e3 / args.iters
+
+
+def profiled_cpu_ms(profile: dict[str, Any], name: str) -> float | None:
+    value = profile.get(name, {}).get("cpu_ms") if profile else None
+    return float(value) if value is not None else None
+
+
 def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, Any], str, list[int]]:
     inputs = make_inputs(tokenizer, model, args.prompt)
     generation_kwargs = {"max_new_tokens": args.max_new_tokens, "do_sample": False}
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
+    prefill_latency_ms = measure_prefill(model, inputs, args)
+    ttft_ms = measure_ttft(model, inputs, args)
 
     with torch.inference_mode():
         for _ in range(args.warmup):
@@ -196,7 +237,10 @@ def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dic
     generated = output_ids[0, inputs["input_ids"].shape[-1] :]
     text = tokenizer.decode(generated, skip_special_tokens=True)
     metrics = {
+        "ttft_ms": ttft_ms,
+        "prefill_latency_ms": prefill_latency_ms,
         "latency_ms": latency * 1e3,
+        "decode_latency_ms": max(latency * 1e3 - ttft_ms, 0.0),
         "tokens_per_second": generated.numel() / latency,
         "input_tokens": inputs["input_ids"].shape[-1],
         "generated_tokens": generated.numel(),
@@ -293,6 +337,27 @@ def main() -> None:
         runtime_backend="dwdp_reference",
         runtime_config={"quantization": args.quantization, "device_map": "auto"},
     )
+    stage_names = ("router", "dispatcher", "scheduler", "comms_planner", "executor", "merger")
+    stage_values = {name: profiled_cpu_ms(dwdp_profile, name) for name in stage_names}
+    stage_total = sum(value for value in stage_values.values() if value is not None)
+    stage_percentages = {
+        name: (value / stage_total * 100.0 if value is not None and stage_total else None)
+        for name, value in stage_values.items()
+    }
+    latency_change_pct = (dwdp_metrics["latency_ms"] / hf_metrics["latency_ms"] - 1.0) * 100.0
+    throughput_change_pct = (dwdp_metrics["tokens_per_second"] / hf_metrics["tokens_per_second"] - 1.0) * 100.0
+    memory_change_pct = (
+        (dwdp_metrics["peak_gpu_memory_bytes"] / hf_metrics["peak_gpu_memory_bytes"] - 1.0) * 100.0
+        if hf_metrics["peak_gpu_memory_bytes"]
+        else None
+    )
+    speed_word = "faster" if latency_change_pct < 0 else "slower"
+    throughput_word = "higher" if throughput_change_pct > 0 else "lower"
+    memory_observation = (
+        f"DWDP peak GPU memory is {memory_change_pct:+.2f}% versus native Hugging Face."
+        if memory_change_pct is not None
+        else "Peak GPU memory comparison was unavailable."
+    )
     report = BenchmarkReport(
         metadata=ReportMetadata(
             experiment_name="colab_hf_vs_dwdp",
@@ -307,15 +372,31 @@ def main() -> None:
         performance=PerformanceComparison(
             huggingface=BackendPerformance(
                 backend="hf",
+                ttft_ms=hf_metrics["ttft_ms"],
+                prefill_latency_ms=hf_metrics["prefill_latency_ms"],
+                decode_latency_ms=hf_metrics["decode_latency_ms"],
                 tokens_per_second=hf_metrics["tokens_per_second"],
                 total_runtime_ms=hf_metrics["latency_ms"],
                 memory=MemoryMetrics(peak_gpu_memory_bytes=hf_metrics["peak_gpu_memory_bytes"]),
             ),
             dwdp=BackendPerformance(
                 backend="dwdp",
+                ttft_ms=dwdp_metrics["ttft_ms"],
+                prefill_latency_ms=dwdp_metrics["prefill_latency_ms"],
+                decode_latency_ms=dwdp_metrics["decode_latency_ms"],
                 tokens_per_second=dwdp_metrics["tokens_per_second"],
                 total_runtime_ms=dwdp_metrics["latency_ms"],
                 memory=MemoryMetrics(peak_gpu_memory_bytes=dwdp_metrics["peak_gpu_memory_bytes"]),
+            ),
+            runtime_breakdown=RuntimeBreakdown(
+                router_ms=stage_values["router"],
+                dispatcher_ms=stage_values["dispatcher"],
+                scheduler_ms=stage_values["scheduler"],
+                comms_planner_ms=stage_values["comms_planner"],
+                executor_ms=stage_values["executor"],
+                merger_ms=stage_values["merger"],
+                total_dwdp_overhead_ms=stage_total or None,
+                module_percentages=stage_percentages,
             ),
         ),
         correctness=CorrectnessMetrics(
@@ -338,6 +419,12 @@ def main() -> None:
             "hf": hf_profile,
             "dwdp": dwdp_profile,
         },
+        observations=(
+            f"DWDP is {abs(latency_change_pct):.2f}% {speed_word} than native Hugging Face by end-to-end latency.",
+            f"DWDP throughput is {abs(throughput_change_pct):.2f}% {throughput_word} than native Hugging Face.",
+            memory_observation,
+            "Prefill is prompt-only forward latency; TTFT is one-token generation latency; decode is total latency minus TTFT.",
+        ),
     )
     report_paths = BenchmarkReportWriter(results_root=args.results_root).write(report)
     print(f"results_dir={report_paths.root}")

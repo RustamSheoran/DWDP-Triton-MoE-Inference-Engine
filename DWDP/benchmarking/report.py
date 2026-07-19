@@ -47,6 +47,26 @@ def _bool(value: bool | None) -> str:
     return "yes" if value else "no"
 
 
+def _change_pct(candidate: float | int | None, reference: float | int | None) -> str:
+    """Format candidate-vs-reference percentage change."""
+
+    if candidate is None or reference in (None, 0):
+        return "N/A"
+    return f"{(float(candidate) / float(reference) - 1.0) * 100.0:+.2f}%"
+
+
+def _profile_rows(payload: object) -> list[tuple[str, float | None, float | None, str]]:
+    if not isinstance(payload, dict):
+        return []
+    rows: list[tuple[str, float | None, float | None, str]] = []
+    for name, value in payload.items():
+        if name == "top_operators" or not isinstance(value, dict):
+            continue
+        operators = value.get("operators", ())
+        rows.append((name, value.get("cpu_ms"), value.get("device_ms"), ", ".join(operators)))
+    return rows
+
+
 def render_markdown(report: BenchmarkReport) -> str:
     """Render a human-readable Markdown benchmark report."""
 
@@ -113,6 +133,31 @@ def render_markdown(report: BenchmarkReport) -> str:
             f"{_fmt(item.decode_latency_ms)} | {_fmt(item.tokens_per_second)} | {_fmt(item.total_runtime_ms)} |"
         )
     lines.append("")
+    lines.append("## DWDP vs Native Hugging Face")
+    lines.append("")
+    lines.append("| Metric | Native HF | DWDP | DWDP change |")
+    lines.append("| --- | ---: | ---: | ---: |")
+    for label, reference, candidate in (
+        ("TTFT ms", perf.huggingface.ttft_ms, perf.dwdp.ttft_ms),
+        ("Prefill ms", perf.huggingface.prefill_latency_ms, perf.dwdp.prefill_latency_ms),
+        ("Decode ms", perf.huggingface.decode_latency_ms, perf.dwdp.decode_latency_ms),
+        ("Tokens/s", perf.huggingface.tokens_per_second, perf.dwdp.tokens_per_second),
+        ("Total latency ms", perf.huggingface.total_runtime_ms, perf.dwdp.total_runtime_ms),
+        (
+            "Peak GPU memory bytes",
+            perf.huggingface.memory.peak_gpu_memory_bytes,
+            perf.dwdp.memory.peak_gpu_memory_bytes,
+        ),
+    ):
+        lines.append(f"| {label} | {_fmt(reference)} | {_fmt(candidate)} | {_change_pct(candidate, reference)} |")
+    latency_change = _change_pct(perf.dwdp.total_runtime_ms, perf.huggingface.total_runtime_ms)
+    throughput_change = _change_pct(perf.dwdp.tokens_per_second, perf.huggingface.tokens_per_second)
+    if latency_change != "N/A":
+        direction = "faster" if float(latency_change.strip("+%")) < 0 else "slower"
+        lines.append("")
+        lines.append(f"**Summary:** DWDP is {abs(float(latency_change.strip('+%'))):.2f}% {direction} than native HF by end-to-end latency.")
+        lines.append(f"DWDP throughput is {throughput_change} versus native HF.")
+    lines.append("")
     lines.append("# Runtime Breakdown")
     lines.append("")
     lines.append("| Module | Latency ms | Percentage |")
@@ -157,10 +202,36 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append("# Profiling Summary")
     lines.append("")
     if report.profiler:
+        lines.append("Load and profiler configuration:")
+        lines.append("")
         lines.append("| Field | Value |")
-        lines.append("| --- | --- |")
-        for key, value in sorted(report.profiler.items()):
-            lines.append(f"| {key} | {_fmt(value)} |")
+        lines.append("| --- | ---: |")
+        for key in ("hf_load_time_ms", "dwdp_load_time_ms", "torch_profiler_enabled"):
+            if key in report.profiler:
+                lines.append(f"| {key} | {_fmt(report.profiler[key])} |")
+        for backend in ("hf", "dwdp"):
+            rows = _profile_rows(report.profiler.get(backend))
+            if not rows:
+                continue
+            lines.append("")
+            lines.append(f"### {backend.upper()} operator categories")
+            lines.append("")
+            lines.append("| Category | CPU self ms | Device self ms | Operators |")
+            lines.append("| --- | ---: | ---: | --- |")
+            for name, cpu_ms, device_ms, operators in rows:
+                lines.append(f"| {name} | {_fmt(cpu_ms)} | {_fmt(device_ms)} | {operators or 'N/A'} |")
+            top_operators = report.profiler.get(backend, {}).get("top_operators", [])
+            if top_operators:
+                lines.append("")
+                lines.append("Top operators by CPU self time:")
+                lines.append("")
+                lines.append("| Operator | CPU self ms | Device self ms | Calls |")
+                lines.append("| --- | ---: | ---: | ---: |")
+                for item in top_operators[:10]:
+                    lines.append(
+                        f"| {item.get('operator', 'N/A')} | {_fmt(item.get('self_cpu_ms'))} | "
+                        f"{_fmt(item.get('self_device_ms'))} | {_fmt(item.get('calls'))} |"
+                    )
     else:
         lines.append("No profiler payload was provided.")
     lines.append("")
