@@ -1,0 +1,19 @@
+{
+  "benchmark_timestamp": "2026-07-23T06:24:00.450211+00:00",
+  "cuda_version": "12.8",
+  "cudnn_version": "91900",
+  "git_branch": "main",
+  "git_commit_hash": "0607c34cb25f774f6ed2226dcd15bbbfe0b743c3",
+  "gpu_memory_bytes": 15637086208,
+  "gpu_model": "Tesla T4",
+  "hostname": "11780d742c42",
+  "nvidia_driver_version": "580.82.07",
+  "operating_system": "Linux-6.6.122+-x86_64-with-glibc2.35",
+  "precision": "fp16",
+  "python_version": "3.12.13 (main, Mar  4 2026, 09:23:07) [GCC 11.4.0]",
+  "pytorch_version": "2.11.0+cu128",
+  "runtime_backend": "kernel_grouped_matmul",
+  "torch_compile": false,
+  "transformers_version": "5.13.1",
+  "triton_version": "3.6.0"
+}

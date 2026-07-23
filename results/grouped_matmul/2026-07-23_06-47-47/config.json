@@ -1,0 +1,39 @@
+{
+  "benchmark": "grouped_expert_gemm",
+  "cases": [
+    {
+      "distribution": "balanced",
+      "dtype": "fp16",
+      "hidden_size": 2048,
+      "name": "custom_e64_t4096_k4_balanced",
+      "num_experts": 64,
+      "output_size": 5632,
+      "seed": 20260723,
+      "tokens": 4096,
+      "top_k": 4
+    },
+    {
+      "distribution": "skewed",
+      "dtype": "fp16",
+      "hidden_size": 2048,
+      "name": "custom_e64_t4096_k4_skewed",
+      "num_experts": 64,
+      "output_size": 5632,
+      "seed": 20260724,
+      "tokens": 4096,
+      "top_k": 4
+    }
+  ],
+  "iterations": 100,
+  "optimized_backend": "triton_grouped_expert_gemm",
+  "preset": "custom",
+  "reference_backend": "pytorch_sequential_expert_gemm",
+  "timing_excludes": [
+    "allocation",
+    "weight_materialization",
+    "triton_compilation",
+    "triton_autotuning",
+    "python_setup"
+  ],
+  "warmup": 10
+}
