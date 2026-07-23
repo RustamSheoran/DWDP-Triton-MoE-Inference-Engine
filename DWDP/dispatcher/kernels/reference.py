@@ -16,6 +16,7 @@ from ..ops import (
     stable_expert_permutation,
 )
 from ..workspace import DispatchWorkspace
+from .triton import triton_counting_scatter_expert_major_dispatch
 
 
 def _resolve_expert_layout(
@@ -254,6 +255,17 @@ def reference_expert_major_dispatch(
 
     if algorithm == "counting_scatter":
         return counting_scatter_expert_major_dispatch(
+            flat_expert_indices,
+            flat_routing_weights,
+            num_experts=num_experts,
+            top_k=top_k,
+            stable_order=stable_order,
+            workspace=workspace,
+            router_counts=router_counts,
+            router_offsets=router_offsets,
+        )
+    if algorithm == "triton_counting_scatter":
+        return triton_counting_scatter_expert_major_dispatch(
             flat_expert_indices,
             flat_routing_weights,
             num_experts=num_experts,

@@ -22,7 +22,7 @@ class DispatcherConfig:
             raise ValueError("num_experts must be > 0")
         if self.index_dtype is not torch.int64:
             raise ValueError("The reference dispatcher currently requires torch.int64 indices")
-        if self.algorithm not in ("counting_scatter", "stable_sort"):
-            raise ValueError("algorithm must be 'counting_scatter' or 'stable_sort'")
-        if self.algorithm == "counting_scatter" and not self.stable_order:
-            raise ValueError("counting_scatter requires stable_order=True")
+        if self.algorithm not in ("counting_scatter", "stable_sort", "triton_counting_scatter"):
+            raise ValueError("algorithm must be 'counting_scatter', 'stable_sort', or 'triton_counting_scatter'")
+        if self.algorithm in ("counting_scatter", "triton_counting_scatter") and not self.stable_order:
+            raise ValueError(f"{self.algorithm} requires stable_order=True")

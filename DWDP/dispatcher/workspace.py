@@ -16,6 +16,8 @@ class DispatchWorkspace:
     packed_routing_weights: torch.Tensor | None = None
     expert_counts: torch.Tensor | None = None
     expert_offsets: torch.Tensor | None = None
+    triton_tile_counts: torch.Tensor | None = None
+    triton_tile_offsets: torch.Tensor | None = None
 
     def _ensure_1d(
         self,
@@ -105,6 +107,40 @@ class DispatchWorkspace:
         )
         return expert_counts, expert_offsets
 
+    def get_triton_tile_buffers(
+        self,
+        num_tiles: int,
+        num_experts: int,
+        *,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return reusable internal scratch for the Triton dispatch backend.
+
+        Each row describes one fixed-size assignment tile. The first tensor is
+        used first for tile histograms and then overwritten with per-expert
+        local starts; the second holds exclusive tile prefixes per expert.
+        """
+
+        shape = (num_tiles, num_experts)
+        for name in ("triton_tile_counts", "triton_tile_offsets"):
+            tensor = getattr(self, name)
+            if (
+                tensor is None
+                or tensor.ndim != 2
+                or tensor.shape[0] < num_tiles
+                or tensor.shape[1] < num_experts
+                or tensor.dtype != torch.int64
+                or tensor.device != device
+            ):
+                tensor = torch.empty(shape, dtype=torch.int64, device=device)
+                setattr(self, name, tensor)
+        assert self.triton_tile_counts is not None
+        assert self.triton_tile_offsets is not None
+        return (
+            self.triton_tile_counts[:num_tiles, :num_experts],
+            self.triton_tile_offsets[:num_tiles, :num_experts],
+        )
+
     def estimated_bytes(self) -> int:
         """Estimate total workspace buffer size in bytes."""
 
@@ -117,6 +153,8 @@ class DispatchWorkspace:
             self.packed_routing_weights,
             self.expert_counts,
             self.expert_offsets,
+            self.triton_tile_counts,
+            self.triton_tile_offsets,
         ):
             if tensor is not None:
                 total += tensor.numel() * tensor.element_size()

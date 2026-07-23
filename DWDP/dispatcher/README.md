@@ -49,13 +49,16 @@ DWDP/dispatcher/
   kernels/
     __init__.py
     reference.py
+    triton.py
 ```
 
 Related files:
 
 ```text
 tests/dispatcher/test_expert_major_dispatcher.py
+tests/dispatcher/test_triton_dispatcher.py
 benchmarks/benchmark_dispatcher.py
+benchmarks/benchmark_dispatcher_triton.py
 docs/dispatcher.md
 ```
 
@@ -75,6 +78,7 @@ The current reference path requires `torch.int64` indices. Supported algorithms 
 
 - `counting_scatter`: histogram + prefix-sum + deterministic scatter
 - `stable_sort`: preserved baseline based on stable sort
+- `triton_counting_scatter`: GPU-resident Triton backend with identical counting-scatter semantics
 
 ### `expert_major.py`
 
@@ -128,7 +132,7 @@ All are 1D tensors of length `num_assignments = T * K`.
 - counts
 - offsets
 
-The workspace is optional. If provided, the dispatcher attempts to reuse existing capacity.
+The workspace is optional. If provided, the dispatcher attempts to reuse existing capacity. The Triton backend additionally reuses tile-local histogram and prefix scratch without exposing it through the dispatch plan.
 
 ### `ops/`
 
@@ -152,12 +156,13 @@ These define the reference semantics independently of the higher-level dispatche
 
 `reference_expert_major_dispatch()` is the explicit fused-kernel replacement boundary.
 
-Today it selects between two reference paths:
+Today it selects between two reference paths and one Triton path:
 
 - `counting_scatter_expert_major_dispatch()`
 - `stable_sort_expert_major_dispatch()`
+- `triton_counting_scatter_expert_major_dispatch()`
 
-Later these can be replaced by Triton or CUDA code that preserves the same return contract.
+`kernels/triton.py` is the first GPU-optimized backend. It preserves the same return contract and can later be replaced by more specialized Triton or CUDA code without changing `DispatchPlan` or downstream runtime APIs.
 
 ### `registry.py`
 
@@ -218,6 +223,32 @@ Optional reusable buffer pool for repeated dispatch calls.
 
 ### `ExpertAssignments`
 
+## Triton Backend
+
+The Triton dispatcher is selected through the existing configuration surface:
+
+```python
+dispatcher = ExpertMajorDispatcher(
+    DispatcherConfig(num_experts=64, algorithm="triton_counting_scatter")
+)
+```
+
+It uses a tiled, deterministic grouping algorithm rather than a global sort:
+
+1. A Triton kernel builds one compact expert histogram per fixed-size input tile. Atomic updates are confined to that tile's private histogram row, rather than contending on global expert counters.
+2. GPU prefix scans derive each tile's reservation in every expert bucket and the global expert offsets.
+3. A fused Triton packing kernel sorts only the tile-local unique key `(expert_id, source_lane)`. The lane suffix makes the sort stable for every expert. It writes the token permutation, source-to-destination permutation, packed expert ids, token ids, and routing weights directly to final storage.
+
+For assignment `a` in tile `q`, destination position remains exactly:
+
+```text
+expert_offsets[expert(a)]
++ assignments_to_expert_from_tiles_before(q)
++ assignments_to_expert_earlier_in_tile(a)
+```
+
+This preserves reference counting-scatter order without a global sort or race-dependent output atomics. The only temporary tensors have shape `[ceil(N / tile_size), E]` and are reused by `DispatchWorkspace`. GPU `torch.cumsum` calls are intentional device-resident scan replacement boundaries for a future specialized Triton/CUDA scan.
+
 Expert-major packed assignment tensors that a future executor can consume directly.
 
 ## Tests
@@ -248,3 +279,5 @@ The current test suite validates:
 - packing cost
 
 This benchmark is intended to remain stable when future Triton or CUDA implementations are added.
+
+`benchmarks/benchmark_dispatcher_triton.py` runs a configurable token/expert/Top-K matrix against the reference counting-scatter path. It validates plan parity before timing and reports latency, assignments/sec, peak allocated memory, workspace bytes, and CUDA profiler kernel-event counts.

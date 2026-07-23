@@ -351,6 +351,7 @@ It currently selects between two reference algorithms:
 
 - `counting_scatter_expert_major_dispatch()`
 - `stable_sort_expert_major_dispatch()`
+- `triton_counting_scatter_expert_major_dispatch()`
 
 The default is `counting_scatter`.
 
@@ -361,9 +362,33 @@ The counting-scatter path orchestrates:
 - destination-position computation
 - scatter packing
 
-The stable-sort path is preserved as a baseline and comparison point.
+The stable-sort path is preserved as a baseline and comparison point. The Triton path is selected with `DispatcherConfig(algorithm="triton_counting_scatter")` and must produce tensors identical to the counting-scatter reference.
 
 This function is the most direct insertion point for future Triton or CUDA kernels.
+
+### `kernels/triton.py`
+
+`kernels/triton.py` contains the GPU-optimized deterministic dispatcher backend. It uses no global sort and no global expert-counter atomics.
+
+The backend partitions token-major assignments into fixed-size tiles. A Triton histogram kernel writes one private `[E]` histogram row per tile. GPU scans convert those rows into (1) the normal global expert offsets and (2) each tile's exclusive reservation in each expert bucket. The fused packing kernel sorts only the bounded tile-local key `(expert_id, source_lane)`, then directly writes the final packed tensors.
+
+The source-lane suffix makes every local key unique. Consequently, assignments for the same expert are ordered by source position within each tile, while tile reservations are ordered by tile id. The resulting global order exactly matches the counting-scatter reference.
+
+Temporary metadata is `[ceil(N / tile_size), E]` rather than assignment-sized. `DispatchWorkspace` owns and reuses these buffers. Device `torch.cumsum` is retained as a deliberate scan replacement boundary for a future fully Triton/CUDA hierarchical scan.
+
+The Triton path preserves the same output tuple as the reference path:
+
+```text
+expert_counts
+expert_offsets
+token_permutation
+inverse_permutation
+packed_expert_ids
+packed_token_indices
+packed_routing_weights
+```
+
+No public dispatcher, scheduler, executor, or runtime API changes are required.
 
 ### `workspace.py`
 
@@ -377,6 +402,7 @@ Workspace reuse applies to:
 - packed routing weights
 - counts
 - offsets
+- Triton tile histogram and prefix scratch
 
 ## Why Router Metadata Reuse Exists
 
@@ -470,7 +496,7 @@ The counting-scatter algorithm has the right asymptotic structure for production
 
 Relative to stable sort, it removes the global `O(N log N)` grouping step and the associated sort traffic.
 
-The current reference implementation still has one important limitation: keyed destination generation is performed on the host because generic PyTorch does not expose a device-resident keyed prefix-scan primitive with the semantics this dispatcher needs. That means:
+The PyTorch reference implementation still has one important limitation: keyed destination generation is performed on the host because generic PyTorch does not expose a device-resident keyed prefix-scan primitive with the semantics this dispatcher needs. That means:
 
 - algorithmically, the path is counting-scatter
 - architecturally, it is ready for Triton/CUDA
@@ -478,13 +504,41 @@ The current reference implementation still has one important limitation: keyed d
 
 The preserved `stable_sort` path remains a useful baseline because it stays fully device-resident in stock PyTorch.
 
+### Triton Counting-Scatter
+
+The Triton backend keeps the counting-scatter semantics GPU resident.
+
+```mermaid
+flowchart TD
+    A[flat_expert_indices] --> B[Tile-local Triton Histograms]
+    B --> C[GPU Tile and Expert Prefix Scans]
+    A --> D[Tile-local Stable Key Sort]
+    C --> E[Fused Triton Packing]
+    D --> E
+    E --> F[DispatchPlan Tensors]
+```
+
+The histogram kernel uses atomic adds only inside a tile-private histogram row. Expert-bucket ordering does not depend on atomics. Each tile receives an exclusive reservation in every expert bucket:
+
+```text
+destination(a) = expert_offsets[expert[a]]
+               + tile_prefix[tile(a), expert[a]]
+               + local_rank_in_tile(a)
+```
+
+`tile_prefix` is an exclusive scan over tiles in source order. `local_rank_in_tile` comes from a bounded local sort of the unique key `(expert_id, source_lane)`. The source-lane suffix means that every expert's assignments retain source order within a tile; source-ordered tile reservations then give exactly the reference counting-scatter result globally.
+
+This replaces the prior all-input stable-rank implementation, which repeatedly scanned the complete assignment vector. There is no global sort and no O(N²) rank calculation. The local sort has fixed tile-size cost, while global memory traffic remains linear in assignments plus compact `[ceil(N / tile_size), E]` metadata.
+
+The tradeoff is deliberate. The scratch matrix grows with both the number of input tiles and experts, so very small batches with very large expert counts can be dominated by scan and metadata cost. For the intended inference regime of thousands of assignments and 8--128 experts, it removes the pathological rank pass, limits histogram contention to a tile, and avoids global sorting workspace. The benchmark matrix is the decision point for future per-architecture tile-size specialization; output semantics remain unchanged regardless of that tuning.
+
 ### Compile Friendliness
 
 The reference path uses straight-line tensor operations and does not iterate over assignments in Python. This is intentionally compatible with future `torch.compile` deployment.
 
 ### GPU Execution
 
-The current implementation relies on PyTorch kernels for:
+The reference implementation relies on PyTorch kernels for:
 
 - reshape
 - bincount
@@ -493,14 +547,14 @@ The current implementation relies on PyTorch kernels for:
 - scatter
 - index_select
 
-No custom CUDA or Triton kernels are present yet.
+The Triton backend implements tile histograms, tile-local starts, and fused packing with custom kernels. Device-side `torch.cumsum` produces expert and tile prefix scans; it is the remaining explicit replacement boundary for a specialized Triton/CUDA hierarchical scan.
 
 ## Future Kernel Strategy
 
 The intended evolution path is:
 
 1. keep the public `DispatchPlan` contract stable
-2. replace the counting-scatter destination generation and packing path with Triton or CUDA
+2. replace device-side prefix scans with a specialized hierarchical Triton or CUDA scan when profiling justifies it
 3. preserve workspace semantics where practical
 4. optionally specialize for local-expert or grouped-expert layouts later
 
@@ -511,7 +565,7 @@ Potential future fusion targets include:
 - fused expert grouping + packed weight movement
 - local-expert remapping for expert-parallel execution
 
-None of those are implemented in the current package.
+The tiled histogram and fused pack are implemented now. A fully fused hierarchical scan, more hardware-specific tile-size tuning, and CUDA persistent implementations remain future work.
 
 ## Tests and Benchmark
 
@@ -528,6 +582,15 @@ None of those are implemented in the current package.
 - registry-based construction
 - configuration validation
 - expert range validation
+
+`tests/dispatcher/test_triton_dispatcher.py` is CUDA/Triton-gated and compares the Triton backend against the counting-scatter reference for:
+
+- random routing
+- multiple expert counts
+- multiple Top-K values
+- deterministic edge cases
+- workspace reuse
+- permutation and metadata equality
 
 ### Benchmark
 
@@ -547,3 +610,5 @@ None of those are implemented in the current package.
 - workspace buffer size
 
 The benchmark is designed so future Triton or CUDA implementations can be compared against the current reference path at the same API boundary.
+
+`benchmarks/benchmark_dispatcher_triton.py` compares the reference counting-scatter backend against `triton_counting_scatter` over configurable token, expert, and Top-K matrices. It checks parity before timing and reports latency, assignments/sec, peak allocated memory, workspace bytes, and CUDA profiler kernel-event counts.
