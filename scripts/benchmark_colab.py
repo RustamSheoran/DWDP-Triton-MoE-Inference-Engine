@@ -39,10 +39,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="Qwen/Qwen1.5-MoE-A2.7B")
     parser.add_argument("--prompt", default="Who are you?")
+    parser.add_argument("--batch-size", type=int, default=1)
+    parser.add_argument("--sequence-length", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--iters", type=int, default=5)
-    parser.add_argument("--quantization", choices=("4bit", "8bit"), default="4bit")
+    parser.add_argument("--quantization", choices=("fp16", "4bit", "8bit"), default="4bit")
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--hf-token", "--use", dest="hf_token", default=None, help="Hugging Face token; also read from HF_TOKEN.")
     profile_group = parser.add_mutually_exclusive_group()
     profile_group.add_argument(
@@ -61,8 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results-root", default="results", help="Directory for timestamped benchmark reports.")
     parser.add_argument("--output-json", default=None, help="Optional path for machine-readable results.")
     args = parser.parse_args()
-    if args.max_new_tokens <= 0 or args.warmup < 0 or args.iters <= 0:
-        parser.error("--max-new-tokens and --iters must be > 0; --warmup must be >= 0")
+    if args.batch_size <= 0 or args.max_new_tokens <= 0 or args.warmup < 0 or args.iters <= 0:
+        parser.error("--batch-size, --max-new-tokens, and --iters must be > 0; --warmup must be >= 0")
+    if args.sequence_length is not None and args.sequence_length <= 0:
+        parser.error("--sequence-length must be > 0 when provided")
     return args
 
 
@@ -79,11 +84,12 @@ def quantization_config(mode: str) -> BitsAndBytesConfig:
 
 def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
-        "quantization_config": quantization_config(mode),
         "device_map": "auto",
         "torch_dtype": torch.float16,
         "low_cpu_mem_usage": True,
     }
+    if mode != "fp16":
+        kwargs["quantization_config"] = quantization_config(mode)
     if token:
         kwargs["token"] = token
     return kwargs
@@ -109,14 +115,30 @@ def resolve_hf_token(explicit_token: str | None) -> str | None:
         return None
 
 
-def make_inputs(tokenizer: Any, model: Any, prompt: str) -> dict[str, torch.Tensor]:
+def make_inputs(
+    tokenizer: Any,
+    model: Any,
+    prompt: str,
+    args: argparse.Namespace,
+) -> dict[str, torch.Tensor]:
+    """Create identical fixed-shape benchmark inputs for both backends."""
     if getattr(tokenizer, "chat_template", None):
         prompt = tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}],
             tokenize=False,
             add_generation_prompt=True,
         )
-    inputs = tokenizer(prompt, return_tensors="pt")
+    prompts = [prompt] * args.batch_size
+    tokenization_kwargs: dict[str, Any] = {"return_tensors": "pt", "padding": args.batch_size > 1}
+    if args.sequence_length is not None:
+        tokenization_kwargs.update(
+            {
+                "padding": "max_length",
+                "truncation": True,
+                "max_length": args.sequence_length,
+            }
+        )
+    inputs = tokenizer(prompts, **tokenization_kwargs)
     device = input_device(model)
     return {key: value.to(device) for key, value in inputs.items()}
 
@@ -133,7 +155,7 @@ def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> 
     activities = [torch.profiler.ProfilerActivity.CPU]
     if torch.cuda.is_available():
         activities.append(torch.profiler.ProfilerActivity.CUDA)
-    inputs = make_inputs(tokenizer, model, args.prompt)
+    inputs = make_inputs(tokenizer, model, args.prompt, args)
     with torch.inference_mode(), torch.profiler.profile(
         activities=activities,
         record_shapes=False,
@@ -216,7 +238,7 @@ def profiled_cpu_ms(profile: dict[str, Any], name: str) -> float | None:
 
 
 def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, Any], str, list[int]]:
-    inputs = make_inputs(tokenizer, model, args.prompt)
+    inputs = make_inputs(tokenizer, model, args.prompt, args)
     generation_kwargs = {"max_new_tokens": args.max_new_tokens, "do_sample": False}
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
@@ -262,6 +284,8 @@ def main() -> None:
     args = parse_args()
     if not torch.cuda.is_available():
         raise SystemExit("A CUDA runtime is required. In Colab select Runtime > Change runtime type > T4 GPU.")
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
     print(f"model={args.model}")
     print(f"quantization={args.quantization}")
@@ -274,6 +298,7 @@ def main() -> None:
     tokenizer = AutoTokenizer.from_pretrained(args.model, **tokenizer_kwargs)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
 
     print("\nLoading native Hugging Face model...")
     hf_load_start = time.perf_counter()
@@ -326,12 +351,12 @@ def main() -> None:
         model_name=args.model,
         checkpoint=args.model,
         prompt=args.prompt,
-        batch_size=1,
+        batch_size=args.batch_size,
         sequence_length=int(hf_metrics["input_tokens"]),
         generation=GenerationConfig(max_new_tokens=args.max_new_tokens, do_sample=False),
         dtype="float16_compute",
         device="cuda",
-        random_seed=0,
+        random_seed=args.seed,
         backend="hf",
         compare_backend="dwdp",
         runtime_backend="dwdp_reference",
@@ -341,6 +366,9 @@ def main() -> None:
             "warmup_iterations": args.warmup,
             "timed_iterations": args.iters,
             "profiling_enabled": args.profile,
+            "batch_size": args.batch_size,
+            "configured_sequence_length": args.sequence_length,
+            "random_seed": args.seed,
         },
     )
     stage_names = ("router", "dispatcher", "scheduler", "comms_planner", "executor", "merger")

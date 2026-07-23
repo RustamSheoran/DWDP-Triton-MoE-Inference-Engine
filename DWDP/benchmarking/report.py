@@ -125,12 +125,13 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append("")
     lines.append("# Performance Results")
     lines.append("")
-    lines.append("| Backend | TTFT ms | Prefill ms | Decode ms | Tokens/s | Total ms |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| Backend | TTFT ms | Prefill ms | Decode ms | Tokens/s | Total ms | Peak GPU bytes |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     for item in (perf.huggingface, perf.dwdp):
         lines.append(
             f"| {item.backend} | {_fmt(item.ttft_ms)} | {_fmt(item.prefill_latency_ms)} | "
-            f"{_fmt(item.decode_latency_ms)} | {_fmt(item.tokens_per_second)} | {_fmt(item.total_runtime_ms)} |"
+            f"{_fmt(item.decode_latency_ms)} | {_fmt(item.tokens_per_second)} | {_fmt(item.total_runtime_ms)} | "
+            f"{_fmt(item.memory.peak_gpu_memory_bytes)} |"
         )
     lines.append("")
     lines.append("## DWDP vs Native Hugging Face")
