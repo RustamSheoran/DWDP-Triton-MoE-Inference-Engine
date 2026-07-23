@@ -197,6 +197,46 @@ Future optimized implementations can fuse or replace:
 - Hopper TMA movement
 - Blackwell Tensor Core paths
 
+## Storage-Preserving Grouped Expert ABI
+
+`ExpertWeightProvider` is an executor-internal abstraction for optimized MoE
+weight access. `QwenSwiGLUWeightProvider` extracts `gate_proj`, `up_proj`, and
+`down_proj` from Qwen-style experts and defines the canonical logical layouts:
+
+```text
+gate_up_weights: [E, 2I, H]
+down_weights:    [E, H, I]
+```
+
+The logical gate/up tensor is represented by paired per-expert matrix views,
+not an eagerly concatenated `torch.Tensor`. Native Hugging Face experts own
+independent parameter storage, and concatenating all projections would
+duplicate model weights. Provider construction retains references to those
+original tensors, exposes dtype/device/format metadata for FP16, BF16, FP8,
+and INT4 backends, and makes materialization explicit.
+
+`TritonExpertExecutor` is the registered `triton` backend boundary. In this
+milestone it validates Qwen SwiGLU expert layout and delegates to the PyTorch
+reference executor. Future grouped Triton/CUDA kernels can consume the same
+provider without changing `ExecutorConfig`, plans, or `ExecutorOutput`.
+
+## Grouped Matrix Multiplication Prototype
+
+`executor/kernels/grouped_matmul.py` implements the first Triton execution
+kernel independently from full SwiGLU execution. It consumes expert-major
+activations `[N, K]`, packed physical weights `[E, O, K]`, and
+`DispatchPlan.metadata.expert_offsets`. Triton programs are indexed by expert,
+token tile, and output tile, so all expert ranges execute in one kernel launch
+without Python expert iteration. The output is written directly to `[N, O]` in
+dispatcher order.
+
+The provider's default matrix views preserve separate Hugging Face parameter
+storage. A dense `[E, O, K]` tensor is therefore made only through explicit
+prototype materialization. This copy is excluded from grouped-GEMM benchmark
+timing and is not invoked from `TritonExpertExecutor.forward()`. A future
+packed-weight loader or pointer-array CUDA backend can replace that boundary
+without changing the grouped-matmul call contract.
+
 without changing Executor API.
 
 ## Distributed Execution

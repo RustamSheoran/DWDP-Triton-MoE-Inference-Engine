@@ -43,6 +43,10 @@ DWDP/executor/
   metadata.py
   outputs.py
   pytorch.py
+  triton.py
+  weights.py
+  extractors/
+    qwen.py
   registry.py
   utils.py
   workspace.py
@@ -146,6 +150,41 @@ Future backends can replace PyTorch internals with:
 - distributed expert execution
 
 without changing Executor inputs or `ExecutorOutput`.
+
+## Optimized Weight Representation
+
+`ExpertWeightProvider` is the internal optimized-execution ABI. The initial
+`QwenSwiGLUWeightProvider` discovers Qwen-style `gate_proj`, `up_proj`, and
+`down_proj` modules and exposes logical expert-major layouts:
+
+```text
+gate_up_weights: [E, 2I, H]
+down_weights:    [E, H, I]
+```
+
+Hugging Face experts normally own separate parameter tensors. The provider
+therefore exposes storage-preserving matrix views rather than eagerly calling
+`torch.stack` or `torch.cat`; each logical expert-major entry references the
+original parameter storage. Explicit `materialize()` methods exist only for a
+future backend that intentionally chooses a packed-weight memory tradeoff.
+
+`TritonExpertExecutor` is registered as `backend="triton"`. It validates and
+owns this provider, but currently delegates execution to `PyTorchExecutor` and
+reports `triton_reference_fallback`. No Triton kernel is launched yet.
+
+## Grouped GEMM Prototype
+
+`kernels/grouped_matmul.py` contains the first real Triton kernel. It computes
+an expert-major projection from activations `[N, K]`, physical packed weights
+`[E, O, K]`, and dispatcher `expert_offsets [E + 1]`, producing `[N, O]` in
+the same deterministic expert-major order. It has a PyTorch reference and is
+tested independently of full expert MLP execution.
+
+The storage-preserving provider remains the default representation. The
+prototype uses explicit `materialize_expert_major_weights()` when it needs a
+physical `[E, O, K]` tensor, and `TritonExpertExecutor.forward()` does not yet
+call this path. This keeps the first kernel measurable without introducing
+silent model-weight duplication into the runtime.
 
 ## Tests and Benchmark
 
