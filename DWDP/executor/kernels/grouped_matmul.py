@@ -109,17 +109,23 @@ def reference_grouped_matmul(
     expert_inputs: torch.Tensor,
     expert_weights: torch.Tensor,
     expert_offsets: torch.Tensor,
+    *,
+    out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """PyTorch reference for expert-major grouped matrix multiplication."""
 
     _validate_grouped_matmul_inputs(expert_inputs, expert_weights, expert_offsets)
     output_size = expert_weights.shape[1]
-    outputs = torch.empty(expert_inputs.shape[0], output_size, dtype=expert_inputs.dtype, device=expert_inputs.device)
+    outputs = _resolve_output_buffer(expert_inputs, output_size, out)
     for expert_id in range(expert_weights.shape[0]):
         start = int(expert_offsets[expert_id].item())
         end = int(expert_offsets[expert_id + 1].item())
         if end > start:
-            outputs[start:end] = torch.matmul(expert_inputs[start:end], expert_weights[expert_id].transpose(0, 1))
+            torch.matmul(
+                expert_inputs[start:end],
+                expert_weights[expert_id].transpose(0, 1),
+                out=outputs[start:end],
+            )
     return outputs
 
 
@@ -129,6 +135,7 @@ def grouped_matmul(
     expert_offsets: torch.Tensor,
     *,
     max_tokens_per_expert: int | None = None,
+    out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Run one deterministic Triton grouped expert projection.
 
@@ -139,6 +146,8 @@ def grouped_matmul(
         max_tokens_per_expert: Optional host scalar used to size the launch
             grid without synchronizing on ``expert_offsets``. The future
             Executor obtains this from ``ExecutionPlan.statistics``.
+        out: Optional preallocated ``[N, O]`` output buffer. Supplying this
+            excludes output allocation from repeated benchmark iterations.
     """
 
     _validate_grouped_matmul_inputs(expert_inputs, expert_weights, expert_offsets)
@@ -159,7 +168,7 @@ def grouped_matmul(
         max_tokens_per_expert = int(counts.max().item()) if counts.numel() else 0
     if max_tokens_per_expert < 0:
         raise ValueError("max_tokens_per_expert must be non-negative")
-    outputs = torch.empty(expert_inputs.shape[0], output_size, dtype=expert_inputs.dtype, device=expert_inputs.device)
+    outputs = _resolve_output_buffer(expert_inputs, output_size, out)
     if max_tokens_per_expert == 0:
         return outputs
 
@@ -229,3 +238,20 @@ def _validate_grouped_matmul_inputs(
         raise ValueError("expert input hidden size and weight K dimension must match")
     if expert_offsets.device != expert_inputs.device or expert_weights.device != expert_inputs.device:
         raise ValueError("inputs, weights, and offsets must share a device")
+
+
+def _resolve_output_buffer(
+    expert_inputs: torch.Tensor,
+    output_size: int,
+    out: torch.Tensor | None,
+) -> torch.Tensor:
+    """Allocate or validate a reusable grouped-matmul output tensor."""
+
+    expected_shape = (expert_inputs.shape[0], output_size)
+    if out is None:
+        return torch.empty(expected_shape, dtype=expert_inputs.dtype, device=expert_inputs.device)
+    if out.shape != expected_shape:
+        raise ValueError(f"out must have shape {expected_shape}")
+    if out.dtype != expert_inputs.dtype or out.device != expert_inputs.device:
+        raise ValueError("out must share input dtype and device")
+    return out
