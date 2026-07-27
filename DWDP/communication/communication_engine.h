@@ -1,6 +1,7 @@
 #pragma once
 
 #include "buffers.h"
+#include "cache_manager.h"
 #include "events.h"
 #include "ipc_manager.h"
 #include "prefetch_worker.h"
@@ -24,6 +25,7 @@ class CommunicationEngine final {
 
   void initialize(std::size_t staging_bytes);
   void registerExpert(int expert_id, void* source_device_pointer, std::size_t size_bytes);
+  void registerIPCExpert(int expert_id, const cudaIpcMemHandle_t& handle, std::size_t size_bytes);
   void shutdown() noexcept;
   void prefetch(int expert_id);
   void wait(int expert_id);
@@ -31,6 +33,7 @@ class CommunicationEngine final {
   [[nodiscard]] bool isResident(int expert_id) const;
   [[nodiscard]] void* getResidentPointer(int expert_id);
   void swapBuffers();
+  void release(int expert_id);
 
   [[nodiscard]] WeightManager& weights() noexcept;
   [[nodiscard]] const WeightManager& weights() const noexcept;
@@ -40,6 +43,7 @@ class CommunicationEngine final {
   CUDAStreamPool streams_;
   CUDAEventPool events_;
   WeightManager weights_;
+  std::unique_ptr<CacheManager> cache_;
   IPCManager ipc_;
   DoubleBufferedStaging staging_;
   PrefetchQueue prefetch_queue_;

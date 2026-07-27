@@ -8,6 +8,7 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 add_library(dwdp_communication STATIC
   buffers.cu
+  cache_manager.cpp
   communication_engine.cpp
   events.cu
   ipc.cu

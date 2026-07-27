@@ -15,6 +15,7 @@ class IPCManager final {
   void closeAll() noexcept;
  private:
   std::mutex mutex_;
-  std::unordered_map<int, void*> imported_;
+  struct ImportedMapping { void* pointer; std::size_t references; };
+  std::unordered_map<int, ImportedMapping> imported_;
 };
 }  // namespace dwdp::communication
