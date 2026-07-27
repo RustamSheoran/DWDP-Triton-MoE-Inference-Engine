@@ -9,6 +9,7 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 add_library(dwdp_communication STATIC
   buffers.cu
   cache_manager.cpp
+  communication_policy.cpp
   communication_engine.cpp
   events.cu
   ipc.cu
@@ -16,6 +17,7 @@ add_library(dwdp_communication STATIC
   prefetch_queue.cpp
   prefetch_worker.cpp
   streams.cu
+  topology.cpp
   weight_manager.cpp)
 
 target_include_directories(dwdp_communication PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
