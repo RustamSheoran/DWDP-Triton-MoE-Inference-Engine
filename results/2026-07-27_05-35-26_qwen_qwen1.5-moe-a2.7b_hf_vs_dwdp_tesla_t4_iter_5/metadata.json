@@ -1,0 +1,34 @@
+{
+  "artifact_files": {
+    "benchmark_config_json": "benchmark_config.json",
+    "correctness_json": "correctness.json",
+    "environment_json": "environment.json",
+    "profiler_json": "profiler.json",
+    "report_json": "report.json",
+    "report_md": "report.md",
+    "runtime_statistics_json": "runtime_statistics.json"
+  },
+  "future_extensions": {
+    "energy_efficiency": null,
+    "logs_dir": "logs",
+    "multi_gpu_topology": null,
+    "nsight_exports": null,
+    "plots_dir": "plots",
+    "power_metrics": null
+  },
+  "metadata": {
+    "experiment_name": "colab_hf_vs_dwdp",
+    "future_extensions": {},
+    "notes": [
+      "Native Transformers and DWDP used the same prompt and generation settings.",
+      "DWDP is measured through the current Hugging Face adapter/reference PyTorch path."
+    ],
+    "schema_version": "1.0",
+    "tags": [
+      "colab",
+      "quantized",
+      "4bit"
+    ]
+  },
+  "schema_version": "1.0"
+}
