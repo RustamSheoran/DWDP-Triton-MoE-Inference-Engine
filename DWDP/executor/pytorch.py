@@ -230,9 +230,9 @@ class PyTorchExecutor(BaseExecutor):
         context: ExpertExecutionContext,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         del context
-        expert = self.experts.get(batch.expert_id)
+        expert_ptr = self.communication_engine.getWeight(batch.expert_id)
         with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
-            expert_outputs = expert(batch.hidden_states)
+            expert_outputs = expert_ptr.module(batch.hidden_states)
         if expert_outputs.ndim != 2:
             raise ValueError("Expert outputs must be rank-2 [tokens, output_dim]")
         weighted_outputs = apply_routing_weights(expert_outputs, batch.routing_weights)

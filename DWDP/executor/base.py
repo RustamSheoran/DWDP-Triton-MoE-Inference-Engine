@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import torch
 from torch import nn
 
+from DWDP.communication import ExecutionCommunicationEngine
 from DWDP.comms_planner.metadata import CommunicationPlan
 from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
@@ -21,7 +22,7 @@ class BaseExecutor(nn.Module, ABC):
     def __init__(self, config: ExecutorConfig, experts: ExpertRegistry) -> None:
         super().__init__()
         self.config = config
-        self.experts = experts
+        self.communication_engine = ExecutionCommunicationEngine(experts)
 
     @abstractmethod
     def forward(
