@@ -14,6 +14,7 @@ class RuntimeConfig:
     dtype: torch.dtype | None = None
     torch_compile: bool = False
     enable_workspace: bool = True
+    enable_cuda_streams: bool = True
     enable_profiling: bool = False
     enable_statistics: bool = True
     deterministic: bool = True

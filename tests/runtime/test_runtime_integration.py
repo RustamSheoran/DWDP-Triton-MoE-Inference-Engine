@@ -72,6 +72,15 @@ def test_runtime_workspace_reuse() -> None:
     assert first_bytes > 0
 
 
+def test_runtime_creates_no_cuda_streams_for_cpu_reference_execution() -> None:
+    runtime = make_runtime()
+
+    runtime(torch.randn(1, 2, 4))
+
+    assert runtime.context.streams is not None
+    assert not runtime.context.streams.initialized
+
+
 def test_runtime_config_validation() -> None:
     with pytest.raises(ValueError):
         RuntimeConfig(world_size=0)

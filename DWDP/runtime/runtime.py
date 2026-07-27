@@ -136,6 +136,10 @@ class DWDPRuntime(nn.Module):
     def forward(self, hidden_states: torch.Tensor) -> RuntimePipelineOutput:
         """Execute one complete DWDP MoE layer pipeline."""
 
+        # Stream objects are persistent runtime resources.  We do not submit
+        # work to them yet: CUDA events are required before cross-stream work
+        # can safely consume tensors produced on another stream.
+        self.context.prepare_for(hidden_states.device)
         profiler = RuntimeProfiler(enabled=self.config.enable_profiling)
         profiler.start()
         workspaces = self.context.workspaces
