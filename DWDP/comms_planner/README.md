@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `DWDP.comms_planner` package builds a reusable communication blueprint from scheduler output.
+The `DWDP.comms_planner` package builds a reusable communication blueprint from scheduler output. The compiled `DWDP/communication` runtime consumes prefetch intent; the planner remains metadata-only.
 
 Input:
 

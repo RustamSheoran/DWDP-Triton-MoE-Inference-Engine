@@ -10,7 +10,8 @@ flowchart LR
     R --> D[Dispatcher]
     D --> S[Scheduler]
     S --> C[Comms Planner]
-    C --> E[Executor]
+    C --> X[Communication Engine]
+    X --> E[Executor]
     E --> M[Merger]
     M --> H1[Hidden States]
 ```

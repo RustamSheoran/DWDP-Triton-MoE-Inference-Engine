@@ -18,6 +18,7 @@ add_library(dwdp_communication STATIC
   prefetch_worker.cpp
   streams.cu
   topology.cpp
+  transfer_scheduler.cpp
   weight_manager.cpp)
 
 target_include_directories(dwdp_communication PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
