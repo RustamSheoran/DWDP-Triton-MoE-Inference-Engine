@@ -17,6 +17,7 @@ class CUDAEventPool final {
   CUDAEventPool& operator=(const CUDAEventPool&) = delete;
 
   void initialize(std::size_t count);
+  [[nodiscard]] std::size_t acquire();
   void shutdown() noexcept;
   void record(std::size_t index, cudaStream_t stream);
   void wait(std::size_t index, cudaStream_t stream) const;

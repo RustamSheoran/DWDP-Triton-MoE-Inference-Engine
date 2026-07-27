@@ -35,5 +35,8 @@ class ExecutionCommunicationEngine(nn.Module):
         )
         return ExpertPointer(module=module, device_pointers=pointers)
 
+    def getResidentPointer(self, expert_id: int) -> ExpertPointer:
+        return self.getWeight(expert_id)
+
     def contains(self, expert_id: int) -> bool:
         return expert_id in self._registry.expert_ids

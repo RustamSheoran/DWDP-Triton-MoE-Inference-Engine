@@ -44,6 +44,24 @@ void CUDAEventPool::initialize(std::size_t count) {
   DWDP_CUDA_CHECK(cudaSetDevice(previous_device));
 }
 
+std::size_t CUDAEventPool::acquire() {
+  std::scoped_lock lock(mutex_);
+  int previous_device = 0;
+  DWDP_CUDA_CHECK(cudaGetDevice(&previous_device));
+  DWDP_CUDA_CHECK(cudaSetDevice(device_id_));
+  cudaEvent_t event_handle = nullptr;
+  try {
+    DWDP_CUDA_CHECK(cudaEventCreateWithFlags(&event_handle, cudaEventDisableTiming));
+    events_.push_back(event_handle);
+  } catch (...) {
+    if (event_handle != nullptr) cudaEventDestroy(event_handle);
+    cudaSetDevice(previous_device);
+    throw;
+  }
+  DWDP_CUDA_CHECK(cudaSetDevice(previous_device));
+  return events_.size() - 1;
+}
+
 void CUDAEventPool::shutdown() noexcept {
   std::scoped_lock lock(mutex_);
   if (events_.empty()) return;

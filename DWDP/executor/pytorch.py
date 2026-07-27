@@ -230,7 +230,7 @@ class PyTorchExecutor(BaseExecutor):
         context: ExpertExecutionContext,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         del context
-        expert_ptr = self.communication_engine.getWeight(batch.expert_id)
+        expert_ptr = self.communication_engine.getResidentPointer(batch.expert_id)
         with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
             expert_outputs = expert_ptr.module(batch.hidden_states)
         if expert_outputs.ndim != 2:

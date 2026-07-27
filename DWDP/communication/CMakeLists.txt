@@ -11,7 +11,9 @@ add_library(dwdp_communication STATIC
   communication_engine.cpp
   events.cu
   ipc.cu
+  ipc_manager.cpp
   prefetch_queue.cpp
+  prefetch_worker.cpp
   streams.cu
   weight_manager.cpp)
 

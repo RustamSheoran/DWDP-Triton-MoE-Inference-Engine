@@ -82,5 +82,7 @@ std::size_t DoubleBufferedStaging::capacity() const noexcept {
   std::scoped_lock lock(mutex_);
   return bytes_;
 }
+std::size_t DoubleBufferedStaging::currentIndex() const noexcept { std::scoped_lock lock(mutex_); return current_index_; }
+std::size_t DoubleBufferedStaging::nextIndex() const noexcept { std::scoped_lock lock(mutex_); return 1U - current_index_; }
 
 }  // namespace dwdp::communication

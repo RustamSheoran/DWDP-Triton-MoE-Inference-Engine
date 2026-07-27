@@ -23,6 +23,8 @@ class DoubleBufferedStaging final {
   void copyToNextAsync(const void* source, std::size_t bytes, cudaMemcpyKind kind,
                        cudaStream_t stream);
   [[nodiscard]] std::size_t capacity() const noexcept;
+  [[nodiscard]] std::size_t currentIndex() const noexcept;
+  [[nodiscard]] std::size_t nextIndex() const noexcept;
 
  private:
   int device_id_;

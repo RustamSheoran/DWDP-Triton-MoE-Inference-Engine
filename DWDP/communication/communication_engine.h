@@ -2,12 +2,15 @@
 
 #include "buffers.h"
 #include "events.h"
+#include "ipc_manager.h"
+#include "prefetch_worker.h"
 #include "prefetch_queue.h"
 #include "streams.h"
 #include "weight_manager.h"
 
 #include <cstddef>
 #include <mutex>
+#include <memory>
 
 namespace dwdp::communication {
 
@@ -20,10 +23,13 @@ class CommunicationEngine final {
   CommunicationEngine& operator=(const CommunicationEngine&) = delete;
 
   void initialize(std::size_t staging_bytes);
+  void registerExpert(int expert_id, void* source_device_pointer, std::size_t size_bytes);
   void shutdown() noexcept;
   void prefetch(int expert_id);
-  void wait();
+  void wait(int expert_id);
   [[nodiscard]] void* getWeight(int expert_id) const;
+  [[nodiscard]] bool isResident(int expert_id) const;
+  [[nodiscard]] void* getResidentPointer(int expert_id);
   void swapBuffers();
 
   [[nodiscard]] WeightManager& weights() noexcept;
@@ -34,8 +40,10 @@ class CommunicationEngine final {
   CUDAStreamPool streams_;
   CUDAEventPool events_;
   WeightManager weights_;
+  IPCManager ipc_;
   DoubleBufferedStaging staging_;
   PrefetchQueue prefetch_queue_;
+  std::unique_ptr<PrefetchWorker> worker_;
   bool initialized_{false};
   mutable std::mutex mutex_;
 };
