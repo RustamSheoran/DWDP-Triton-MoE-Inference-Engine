@@ -12,7 +12,9 @@ CUDAEventPool::CUDAEventPool(int device_id) : device_id_(device_id) {
   }
 }
 
-CUDAEventPool::~CUDAEventPool() noexcept { shutdown(); }
+CUDAEventPool::~CUDAEventPool() noexcept {
+  shutdown();
+}
 
 void CUDAEventPool::initialize(std::size_t count) {
   if (count == 0) {
@@ -30,12 +32,13 @@ void CUDAEventPool::initialize(std::size_t count) {
   DWDP_CUDA_CHECK(cudaSetDevice(device_id_));
   try {
     events_.resize(count, nullptr);
-    for (auto& event : events_) {
+    for (auto &event : events_) {
       DWDP_CUDA_CHECK(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
     }
   } catch (...) {
-    for (auto& event : events_) {
-      if (event != nullptr) cudaEventDestroy(event);
+    for (auto &event : events_) {
+      if (event != nullptr)
+        cudaEventDestroy(event);
     }
     events_.clear();
     cudaSetDevice(previous_device);
@@ -54,7 +57,8 @@ std::size_t CUDAEventPool::acquire() {
     DWDP_CUDA_CHECK(cudaEventCreateWithFlags(&event_handle, cudaEventDisableTiming));
     events_.push_back(event_handle);
   } catch (...) {
-    if (event_handle != nullptr) cudaEventDestroy(event_handle);
+    if (event_handle != nullptr)
+      cudaEventDestroy(event_handle);
     cudaSetDevice(previous_device);
     throw;
   }
@@ -64,12 +68,14 @@ std::size_t CUDAEventPool::acquire() {
 
 void CUDAEventPool::shutdown() noexcept {
   std::scoped_lock lock(mutex_);
-  if (events_.empty()) return;
+  if (events_.empty())
+    return;
   int previous_device = 0;
   cudaGetDevice(&previous_device);
   cudaSetDevice(device_id_);
-  for (auto& event : events_) {
-    if (event != nullptr) cudaEventDestroy(event);
+  for (auto &event : events_) {
+    if (event != nullptr)
+      cudaEventDestroy(event);
   }
   events_.clear();
   cudaSetDevice(previous_device);
@@ -99,7 +105,8 @@ std::size_t CUDAEventPool::size() const noexcept {
 }
 
 void CUDAEventPool::validateIndex(std::size_t index) const {
-  if (index >= events_.size()) throw std::out_of_range("CUDA event index out of range");
+  if (index >= events_.size())
+    throw std::out_of_range("CUDA event index out of range");
 }
 
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

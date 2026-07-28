@@ -9,12 +9,12 @@
 namespace dwdp::communication {
 
 class CUDAEventPool final {
- public:
+public:
   explicit CUDAEventPool(int device_id = 0);
   ~CUDAEventPool() noexcept;
 
-  CUDAEventPool(const CUDAEventPool&) = delete;
-  CUDAEventPool& operator=(const CUDAEventPool&) = delete;
+  CUDAEventPool(const CUDAEventPool &) = delete;
+  CUDAEventPool &operator=(const CUDAEventPool &) = delete;
 
   void initialize(std::size_t count);
   [[nodiscard]] std::size_t acquire();
@@ -24,7 +24,7 @@ class CUDAEventPool final {
   [[nodiscard]] cudaEvent_t event(std::size_t index) const;
   [[nodiscard]] std::size_t size() const noexcept;
 
- private:
+private:
   void validateIndex(std::size_t index) const;
 
   int device_id_;
@@ -32,4 +32,4 @@ class CUDAEventPool final {
   mutable std::mutex mutex_;
 };
 
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

@@ -8,9 +8,9 @@ from DWDP.scheduler.execution import ExecutionPlan
 
 from .base import BaseExecutor
 from .config import ExecutorConfig
-from .experts import ExpertBatch, ExpertExecutionContext, ExpertRegistry
+from .experts import ExpertRegistry
 from .metadata import TimingMetadata, WorkspaceMetadata
-from .ops import apply_routing_weights, gather_expert_inputs, write_expert_outputs
+from .ops import gather_expert_inputs
 from .outputs import (
     ExecutionMetadata,
     ExecutionStatistics,
@@ -59,13 +59,8 @@ class PyTorchExecutor(BaseExecutor):
         expert_records: list[ExpertOutput] = []
         skipped_experts = 0
 
-        for schedule_idx in range(execution_plan.expert_queue.numel()):
-            expert_id = int(execution_plan.expert_queue[schedule_idx].item())
-            start = int(execution_plan.expert_starts[schedule_idx].item())
-            end = int(execution_plan.expert_ends[schedule_idx].item())
-            count = int(execution_plan.expert_counts[schedule_idx].item())
-            priority = int(execution_plan.execution_priority[schedule_idx].item())
-            stream_id = int(execution_plan.stream_assignments[schedule_idx].item())
+        schedule_rows = self._get_schedule_rows(execution_plan, workspace=active_workspace)
+        for schedule_idx, (expert_id, start, end, count, priority, stream_id) in enumerate(schedule_rows):
 
             if count == 0:
                 skipped_experts += 1
@@ -82,21 +77,7 @@ class PyTorchExecutor(BaseExecutor):
                 token_indices,
                 workspace=active_workspace,
             )
-            batch = ExpertBatch(
-                expert_id=expert_id,
-                start=start,
-                end=end,
-                token_indices=token_indices,
-                routing_weights=routing_weights,
-                hidden_states=gathered,
-            )
-            context = ExpertExecutionContext(
-                expert_id=expert_id,
-                priority=priority,
-                stream_id=stream_id,
-                deterministic=self.config.deterministic,
-            )
-            expert_output, weighted_output = self._execute_expert(batch, context)
+            expert_output = self._execute_expert(expert_id, gathered)
             if output_size is None:
                 output_size = int(expert_output.shape[-1])
                 packed_outputs, weighted_outputs = self._allocate_outputs(
@@ -112,10 +93,23 @@ class PyTorchExecutor(BaseExecutor):
                     f"expected {(count, output_size)}"
                 )
 
-            expert_output = expert_output.to(dtype=output_dtype)
-            weighted_output = weighted_output.to(dtype=output_dtype)
-            write_expert_outputs(packed_outputs, expert_output, start=start, end=end)
-            write_expert_outputs(weighted_outputs, weighted_output, start=start, end=end)
+            packed_slice = packed_outputs[start:end]
+            if expert_output.dtype == output_dtype:
+                packed_slice.copy_(expert_output)
+                weight_source = packed_slice
+            else:
+                packed_slice.copy_(expert_output.to(dtype=output_dtype))
+                # Preserve reference rounding: routing is applied at the
+                # expert's native precision, then written to output_dtype.
+                weight_source = expert_output
+            # Write weighted values directly to the final packed buffer.  The
+            # previous path allocated a full temporary tensor and then copied
+            # it into this exact slice for every active expert.
+            torch.mul(
+                weight_source,
+                routing_weights.unsqueeze(-1),
+                out=weighted_outputs[start:end],
+            )
             expert_records.append(
                 ExpertOutput(
                     expert_id=expert_id,
@@ -185,6 +179,35 @@ class PyTorchExecutor(BaseExecutor):
             deterministic=self.config.deterministic,
         )
 
+    @staticmethod
+    def _get_schedule_rows(
+        execution_plan: ExecutionPlan,
+        *,
+        workspace: ExecutorWorkspace | None,
+    ) -> tuple[tuple[int, int, int, int, int, int], ...]:
+        """Materialize scheduler fields without per-expert CUDA scalar reads."""
+
+        if workspace is not None:
+            return workspace.get_schedule_rows(
+                execution_plan.expert_queue,
+                execution_plan.expert_starts,
+                execution_plan.expert_ends,
+                execution_plan.expert_counts,
+                execution_plan.execution_priority,
+                execution_plan.stream_assignments,
+            )
+        values = torch.stack(
+            (
+                execution_plan.expert_queue,
+                execution_plan.expert_starts,
+                execution_plan.expert_ends,
+                execution_plan.expert_counts,
+                execution_plan.execution_priority,
+                execution_plan.stream_assignments,
+            )
+        ).cpu().tolist()
+        return tuple(zip(*values))
+
     def _allocate_outputs(
         self,
         num_assignments: int,
@@ -213,30 +236,33 @@ class PyTorchExecutor(BaseExecutor):
         *,
         workspace: ExecutorWorkspace | None,
     ) -> torch.Tensor:
+        if workspace is None:
+            return gather_expert_inputs(flat_hidden_states, token_indices)
+        buffer = workspace.get_gather_buffer(
+            token_indices.numel(),
+            flat_hidden_states.shape[-1],
+            dtype=flat_hidden_states.dtype,
+            device=flat_hidden_states.device,
+        )
+        if not self.config.enable_profiling:
+            return gather_expert_inputs(flat_hidden_states, token_indices, out=buffer)
         with torch.autograd.profiler.record_function("dwdp.gather"):
-            if workspace is None:
-                return gather_expert_inputs(flat_hidden_states, token_indices)
-            buffer = workspace.get_gather_buffer(
-                token_indices.numel(),
-                flat_hidden_states.shape[-1],
-                dtype=flat_hidden_states.dtype,
-                device=flat_hidden_states.device,
-            )
             return gather_expert_inputs(flat_hidden_states, token_indices, out=buffer)
 
     def _execute_expert(
         self,
-        batch: ExpertBatch,
-        context: ExpertExecutionContext,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        del context
-        expert_ptr = self.communication_engine.getResidentPointer(batch.expert_id)
-        with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
-            expert_outputs = expert_ptr.module(batch.hidden_states)
+        expert_id: int,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        expert_ptr = self.communication_engine.getResidentPointer(expert_id)
+        if self.config.enable_profiling:
+            with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
+                expert_outputs = expert_ptr.module(hidden_states)
+        else:
+            expert_outputs = expert_ptr.module(hidden_states)
         if expert_outputs.ndim != 2:
             raise ValueError("Expert outputs must be rank-2 [tokens, output_dim]")
-        weighted_outputs = apply_routing_weights(expert_outputs, batch.routing_weights)
-        return expert_outputs, weighted_outputs
+        return expert_outputs
 
 
 register_executor("pytorch", PyTorchExecutor)

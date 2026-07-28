@@ -11,8 +11,8 @@ from DWDP.comms_planner import CommunicationPlannerConfig, build_communication_p
 from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, ExpertRegistry, build_executor
 from DWDP.merger import MergerConfig, build_merger
-from DWDP.router import RouterConfig, build_router
-from DWDP.scheduler import SchedulerConfig, build_scheduler
+from DWDP.router import MetadataLevel, RouterConfig, build_router
+from DWDP.scheduler import SchedulerConfig, SchedulerMetadataLevel, build_scheduler
 
 from .config import RuntimeConfig
 from .context import RuntimeContext
@@ -69,6 +69,7 @@ class DWDPRuntime(nn.Module):
                 num_experts=num_experts,
                 top_k=top_k,
                 router_type=runtime_config.router_type,
+                metadata_level=MetadataLevel.COUNTS,
             )
         )
         return cls(
@@ -77,6 +78,7 @@ class DWDPRuntime(nn.Module):
                 DispatcherConfig(
                     num_experts=num_experts,
                     dispatcher_type=runtime_config.dispatcher_type,
+                    validate_inputs=False,
                 )
             ),
             scheduler=build_scheduler(
@@ -84,6 +86,9 @@ class DWDPRuntime(nn.Module):
                     scheduling_policy=runtime_config.scheduling_policy,
                     deterministic=runtime_config.deterministic,
                     enable_workspace=runtime_config.enable_workspace,
+                    metadata_level=SchedulerMetadataLevel.MINIMAL,
+                    enable_dependency_metadata=False,
+                    enable_barrier_metadata=False,
                 )
             ),
             comms_planner=build_communication_planner(
@@ -93,6 +98,11 @@ class DWDPRuntime(nn.Module):
                     enable_workspace=runtime_config.enable_workspace,
                     world_size=runtime_config.world_size,
                     local_rank=runtime_config.local_rank,
+                    enable_prefetch_metadata=False,
+                    enable_overlap_metadata=False,
+                    enable_topology_metadata=False,
+                    enable_cost_model=False,
+                    enable_statistics=False,
                 )
             ),
             executor=build_executor(
@@ -101,6 +111,7 @@ class DWDPRuntime(nn.Module):
                     dtype=runtime_config.dtype,
                     enable_workspace=runtime_config.enable_workspace,
                     enable_statistics=runtime_config.enable_statistics,
+                    enable_profiling=runtime_config.enable_profiling,
                     deterministic=runtime_config.deterministic,
                 ),
                 expert_registry,

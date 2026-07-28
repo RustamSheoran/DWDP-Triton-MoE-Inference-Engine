@@ -7,12 +7,12 @@
 namespace dwdp::communication {
 
 class CUDAStreamPool final {
- public:
+public:
   explicit CUDAStreamPool(int device_id = 0);
   ~CUDAStreamPool() noexcept;
 
-  CUDAStreamPool(const CUDAStreamPool&) = delete;
-  CUDAStreamPool& operator=(const CUDAStreamPool&) = delete;
+  CUDAStreamPool(const CUDAStreamPool &) = delete;
+  CUDAStreamPool &operator=(const CUDAStreamPool &) = delete;
 
   void initialize();
   void shutdown() noexcept;
@@ -22,7 +22,7 @@ class CUDAStreamPool final {
   [[nodiscard]] int device() const noexcept;
   [[nodiscard]] bool initialized() const noexcept;
 
- private:
+private:
   int device_id_;
   cudaStream_t compute_stream_{nullptr};
   cudaStream_t copy_stream_{nullptr};
@@ -30,4 +30,4 @@ class CUDAStreamPool final {
   mutable std::mutex mutex_;
 };
 
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

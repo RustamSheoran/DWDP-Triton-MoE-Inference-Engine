@@ -9,8 +9,8 @@ from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, build_executor
 from DWDP.merger import MergerConfig, build_merger
 from DWDP.comms_planner import CommunicationPlannerConfig, build_communication_planner
-from DWDP.router import LinearTopKRouter, RouterConfig
-from DWDP.scheduler import SchedulerConfig, build_scheduler
+from DWDP.router import LinearTopKRouter, MetadataLevel, RouterConfig
+from DWDP.scheduler import SchedulerConfig, SchedulerMetadataLevel, build_scheduler
 from DWDP.runtime.config import RuntimeConfig
 from DWDP.runtime.context import RuntimeContext
 
@@ -53,6 +53,7 @@ class DWDPMoEBlock(nn.Module):
             bias=spec.gate.bias is not None,
             topk_sorted=False,
             renormalize=bool(getattr(spec.module, "norm_topk_prob", True)),
+            metadata_level=MetadataLevel.COUNTS,
         )
         if torch.is_floating_point(spec.gate.weight):
             self.router = LinearTopKRouter(router_config)
@@ -73,6 +74,7 @@ class DWDPMoEBlock(nn.Module):
             DispatcherConfig(
                 num_experts=spec.num_experts,
                 dispatcher_type=config.dispatcher_type,
+                validate_inputs=False,
             )
         )
         self.scheduler = build_scheduler(
@@ -80,6 +82,9 @@ class DWDPMoEBlock(nn.Module):
                 scheduling_policy=config.scheduling_policy,
                 deterministic=config.deterministic,
                 enable_workspace=config.enable_workspace,
+                metadata_level=SchedulerMetadataLevel.MINIMAL,
+                enable_dependency_metadata=False,
+                enable_barrier_metadata=False,
             )
         )
         self.comms_planner = build_communication_planner(
@@ -89,6 +94,11 @@ class DWDPMoEBlock(nn.Module):
                 enable_workspace=config.enable_workspace,
                 world_size=config.world_size,
                 local_rank=config.local_rank,
+                enable_prefetch_metadata=False,
+                enable_overlap_metadata=False,
+                enable_topology_metadata=False,
+                enable_cost_model=False,
+                enable_statistics=False,
             )
         )
         self.executor = build_executor(
@@ -97,6 +107,7 @@ class DWDPMoEBlock(nn.Module):
                 dtype=config.dtype,
                 enable_workspace=config.enable_workspace,
                 enable_statistics=config.enable_statistics,
+                enable_profiling=config.enable_profiling,
                 deterministic=config.deterministic,
             ),
             spec.experts,
@@ -116,24 +127,20 @@ class DWDPMoEBlock(nn.Module):
 
         del args, kwargs
         workspaces = self.context.workspaces
-        with torch.autograd.profiler.record_function("dwdp.router"):
+        if not self.config.enable_profiling:
             router_output = self.router(hidden_states)
-        with torch.autograd.profiler.record_function("dwdp.dispatcher"):
             dispatch_plan = self.dispatcher(
                 router_output,
                 workspace=workspaces.dispatch if workspaces is not None else None,
             )
-        with torch.autograd.profiler.record_function("dwdp.scheduler"):
             execution_plan = self.scheduler(
                 dispatch_plan,
                 workspace=workspaces.scheduler if workspaces is not None else None,
             )
-        with torch.autograd.profiler.record_function("dwdp.comms_planner"):
             communication_plan = self.comms_planner(
                 execution_plan,
                 workspace=workspaces.comms if workspaces is not None else None,
             )
-        with torch.autograd.profiler.record_function("dwdp.executor"):
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
@@ -141,11 +148,41 @@ class DWDPMoEBlock(nn.Module):
                 communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
-        with torch.autograd.profiler.record_function("dwdp.merger"):
             merger_output = self.merger(
                 executor_output,
                 workspace=workspaces.merger if workspaces is not None else None,
             )
+        else:
+            with torch.autograd.profiler.record_function("dwdp.router"):
+                router_output = self.router(hidden_states)
+            with torch.autograd.profiler.record_function("dwdp.dispatcher"):
+                dispatch_plan = self.dispatcher(
+                    router_output,
+                    workspace=workspaces.dispatch if workspaces is not None else None,
+                )
+            with torch.autograd.profiler.record_function("dwdp.scheduler"):
+                execution_plan = self.scheduler(
+                    dispatch_plan,
+                    workspace=workspaces.scheduler if workspaces is not None else None,
+                )
+            with torch.autograd.profiler.record_function("dwdp.comms_planner"):
+                communication_plan = self.comms_planner(
+                    execution_plan,
+                    workspace=workspaces.comms if workspaces is not None else None,
+                )
+            with torch.autograd.profiler.record_function("dwdp.executor"):
+                executor_output = self.executor(
+                    hidden_states,
+                    dispatch_plan,
+                    execution_plan,
+                    communication_plan,
+                    workspace=workspaces.executor if workspaces is not None else None,
+                )
+            with torch.autograd.profiler.record_function("dwdp.merger"):
+                merger_output = self.merger(
+                    executor_output,
+                    workspace=workspaces.merger if workspaces is not None else None,
+                )
         output = merger_output.hidden_states
 
         if self.shared_expert is not None:

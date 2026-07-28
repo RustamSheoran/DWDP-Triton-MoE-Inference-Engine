@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstddef>
 #include <condition_variable>
+#include <cstddef>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -13,20 +13,21 @@ struct PrefetchRequest {
 };
 
 class PrefetchQueue final {
- public:
+public:
   void enqueue(PrefetchRequest request);
   [[nodiscard]] std::optional<PrefetchRequest> dequeue();
   [[nodiscard]] std::optional<PrefetchRequest> waitDequeue();
   [[nodiscard]] std::optional<PrefetchRequest> peek() const;
   [[nodiscard]] bool empty() const;
   [[nodiscard]] std::size_t size() const;
+  void reset();
   void close();
 
- private:
+private:
   mutable std::mutex mutex_;
   std::condition_variable ready_;
   std::queue<PrefetchRequest> queue_;
   bool closed_{false};
 };
 
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

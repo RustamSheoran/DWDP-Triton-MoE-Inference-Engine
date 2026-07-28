@@ -130,6 +130,27 @@ Contains:
 
 This avoids repeated allocation during inference iterations and keeps the API compatible with future CUDA Graph constraints.
 
+The executor materializes the compact scheduler description once on the host
+and caches it when the same plan is reused. This avoids device scalar reads in
+the expert loop, which would otherwise serialize GPU launches. Routing weights
+are written directly into the final weighted-output buffer, avoiding one
+temporary output allocation and copy per active expert.
+
+## Why the reference backend still iterates experts
+
+The PyTorch backend must support arbitrary registered `nn.Module` experts,
+including independently stored bitsandbytes Qwen projections. PyTorch has no
+storage-preserving grouped invocation API for those heterogeneous module calls.
+Packing all weights merely to remove the loop duplicates model storage and is
+not an acceptable production trade-off. The loop is therefore retained only at
+the module invocation boundary; its surrounding schedule extraction, handle
+lookup, workspaces, output writes, and routing-weight path are minimized.
+
+The Triton grouped-matmul implementation is a CUDA-gated dense-kernel boundary
+for compatible packed weights. It is deliberately not selected for quantized
+Hugging Face experts until a parity-tested, storage-preserving grouped backend
+is available.
+
 ## Kernel Boundaries
 
 Current replacement boundary:

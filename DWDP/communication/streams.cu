@@ -12,7 +12,9 @@ CUDAStreamPool::CUDAStreamPool(int device_id) : device_id_(device_id) {
   }
 }
 
-CUDAStreamPool::~CUDAStreamPool() noexcept { shutdown(); }
+CUDAStreamPool::~CUDAStreamPool() noexcept {
+  shutdown();
+}
 
 void CUDAStreamPool::initialize() {
   std::scoped_lock lock(mutex_);
@@ -81,7 +83,11 @@ cudaStream_t CUDAStreamPool::copy() const {
   return copy_stream_;
 }
 
-int CUDAStreamPool::device() const noexcept { return device_id_; }
-bool CUDAStreamPool::initialized() const noexcept { return initialized_; }
+int CUDAStreamPool::device() const noexcept {
+  return device_id_;
+}
+bool CUDAStreamPool::initialized() const noexcept {
+  return initialized_;
+}
 
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

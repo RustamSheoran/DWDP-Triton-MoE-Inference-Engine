@@ -15,15 +15,27 @@
 
 namespace dwdp::communication {
 class PrefetchWorker final {
- public:
-  PrefetchWorker(WeightManager&, CacheManager&, IPCManager&, DoubleBufferedStaging&, CUDAEventPool&, PrefetchQueue&, CUDAStreamPool&);
+public:
+  PrefetchWorker(WeightManager &, CacheManager &, IPCManager &, DoubleBufferedStaging &,
+                 CUDAEventPool &, PrefetchQueue &, CUDAStreamPool &);
   ~PrefetchWorker() noexcept;
   void start();
   void stop() noexcept;
   void notifyBufferAvailable();
- private:
+
+private:
   void run() noexcept;
-  WeightManager& weights_; CacheManager& cache_; IPCManager& ipc_; DoubleBufferedStaging& staging_; CUDAEventPool& events_; PrefetchQueue& queue_; CUDAStreamPool& streams_;
-  std::thread thread_; std::atomic<bool> running_{false}; std::mutex mutex_; std::condition_variable ready_; bool buffer_available_{true};
+  WeightManager &weights_;
+  CacheManager &cache_;
+  IPCManager &ipc_;
+  DoubleBufferedStaging &staging_;
+  CUDAEventPool &events_;
+  PrefetchQueue &queue_;
+  CUDAStreamPool &streams_;
+  std::thread thread_;
+  std::atomic<bool> running_{false};
+  std::mutex mutex_;
+  std::condition_variable ready_;
+  bool buffer_available_{true};
 };
-}  // namespace dwdp::communication
+} // namespace dwdp::communication

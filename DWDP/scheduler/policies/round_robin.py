@@ -94,14 +94,19 @@ class RoundRobinScheduler(BaseScheduler):
         device: torch.device,
         workspace: SchedulerWorkspace | None,
     ) -> SynchronizationMetadata:
+        if not self.config.enable_barrier_metadata:
+            empty = torch.empty(0, dtype=torch.bool, device=device)
+            return SynchronizationMetadata(
+                barrier_after_batch=empty,
+                cuda_event_ids=None,
+                stream_waits=None,
+            )
+
         if workspace is None:
             barrier_after_batch = torch.zeros(active_count, dtype=torch.bool, device=device)
         else:
             barrier_after_batch = workspace.get_barrier_buffer(active_count, device=device)
             barrier_after_batch.zero_()
-
-        if not self.config.enable_barrier_metadata:
-            barrier_after_batch = barrier_after_batch[:0]
 
         return SynchronizationMetadata(
             barrier_after_batch=barrier_after_batch,
@@ -114,6 +119,15 @@ class RoundRobinScheduler(BaseScheduler):
         device: torch.device,
         workspace: SchedulerWorkspace | None,
     ) -> DependencyMetadata:
+        if not self.config.enable_dependency_metadata:
+            empty = torch.empty(0, dtype=torch.int64, device=device)
+            return DependencyMetadata(
+                dependency_src=empty,
+                dependency_dst=empty,
+                prefetch_expert_ids=None,
+                communication_groups=None,
+            )
+
         dependency_count = 0
         if workspace is None:
             dependency_src = torch.empty(dependency_count, dtype=torch.int64, device=device)
@@ -123,10 +137,6 @@ class RoundRobinScheduler(BaseScheduler):
                 dependency_count,
                 device=device,
             )
-
-        if not self.config.enable_dependency_metadata:
-            dependency_src = dependency_src[:0]
-            dependency_dst = dependency_dst[:0]
 
         return DependencyMetadata(
             dependency_src=dependency_src,
@@ -148,8 +158,13 @@ class RoundRobinScheduler(BaseScheduler):
             max_count = 0
             min_count = 0
         else:
-            max_count = int(active_counts.max().item())
-            min_count = int(active_counts.min().item())
+            # Keep diagnostic statistics off the scalar CUDA path.  A compact
+            # transfer creates one host dependency instead of serializing two
+            # reduction results through ``Tensor.item()``.
+            max_count, min_count = (
+                int(value)
+                for value in torch.stack((active_counts.max(), active_counts.min())).cpu().tolist()
+            )
 
         return SchedulerStatistics(
             num_experts=metadata.num_experts,

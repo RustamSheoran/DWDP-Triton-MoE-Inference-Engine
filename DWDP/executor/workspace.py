@@ -13,6 +13,11 @@ class ExecutorWorkspace:
     weighted_expert_outputs: torch.Tensor | None = None
     gathered_activations: torch.Tensor | None = None
     temporary_outputs: torch.Tensor | None = None
+    # The scheduler stores its compact execution description on the device.
+    # Keep the last host copy here so repeated decode shapes do not force a
+    # device-to-host read before every expert launch.
+    _schedule_tensors: tuple[torch.Tensor, ...] | None = None
+    _schedule_rows: tuple[tuple[int, int, int, int, int, int], ...] | None = None
 
     def _ensure_2d(
         self,
@@ -78,6 +83,48 @@ class ExecutorWorkspace:
             dtype=dtype,
             device=device,
         )
+
+    def get_schedule_rows(
+        self,
+        expert_queue: torch.Tensor,
+        expert_starts: torch.Tensor,
+        expert_ends: torch.Tensor,
+        expert_counts: torch.Tensor,
+        execution_priority: torch.Tensor,
+        stream_assignments: torch.Tensor,
+    ) -> tuple[tuple[int, int, int, int, int, int], ...]:
+        """Return host execution rows with one device synchronization at most.
+
+        Calling ``Tensor.item()`` for every scheduler field forces CUDA to
+        synchronize per scalar.  Materializing the small schedule once makes
+        the host loop independent of device scalar reads.  Holding tensor
+        references, rather than a pointer-only key, keeps the cache safe when
+        the allocator recycles storage for a later plan.
+        """
+
+        tensors = (
+            expert_queue,
+            expert_starts,
+            expert_ends,
+            expert_counts,
+            execution_priority,
+            stream_assignments,
+        )
+        if (
+            self._schedule_tensors is not None
+            and all(cached is current for cached, current in zip(self._schedule_tensors, tensors))
+            and self._schedule_rows is not None
+        ):
+            return self._schedule_rows
+
+        # stack performs one compact device copy before tolist transfers the
+        # complete schedule, replacing six scalar D2H synchronizations per
+        # active expert.
+        values = torch.stack(tensors).cpu().tolist()
+        rows = tuple(zip(*values))
+        self._schedule_tensors = tensors
+        self._schedule_rows = rows
+        return rows
 
     def estimated_bytes(self) -> int:
         """Estimate allocated workspace bytes."""

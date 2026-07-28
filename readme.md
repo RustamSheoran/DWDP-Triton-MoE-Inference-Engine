@@ -1,398 +1,167 @@
-There is no GPU available offline in this environment, so avoid CUDA-dependent runs here. Python is available for CPU-only checks and documentation work.
+# DWDP: Distributed Weight Data Parallelism
 
-## How To Use
+DWDP is an inference-oriented Mixture-of-Experts runtime. It keeps the model's
+expert parameters in their original framework storage, routes tokens into a
+deterministic expert-major layout, executes local experts, and merges the
+results back into token-major order. The current production target is a
+single-GPU PyTorch runtime; the communication subsystem defines the C++20/CUDA
+ABI used for future multi-GPU residency and transfer execution.
 
-Install the package in editable mode:
+## Design philosophy
 
-```bash
-pip install -e .
+- Preserve the established Router → Dispatcher → Scheduler → Communication
+  Planner → Communication Engine → Executor → Merger architecture.
+- Keep routing and packing deterministic so correctness is auditable.
+- Reuse device workspaces and avoid host synchronization in inference paths.
+- Treat metadata as a cost: materialize only the representation consumed by
+  the next stage.
+- Keep model weights storage-preserving; never silently duplicate an MoE
+  checkpoint merely to select an execution backend.
+
+## Runtime pipeline
+
+```mermaid
+flowchart LR
+  H[Hidden states] --> R[Router]
+  R --> D[Dispatcher]
+  D --> S[Scheduler]
+  S --> CP[Communication planner]
+  CP --> CE[Communication engine]
+  D --> E[Executor]
+  S --> E
+  CE --> E
+  E --> M[Merger]
+  M --> O[Token-major output]
 ```
 
-Run generation through the installed command:
+The dispatcher produces one contiguous expert-major assignment stream. The
+scheduler refers to ranges in that stream; it does not reorder tensor data.
+The executor writes packed and routing-weighted outputs in the same order, and
+the merger restores the original token layout.
+
+## Repository structure
+
+| Path | Purpose |
+| --- | --- |
+| `DWDP/router` | Linear top-k routing and routing metadata. |
+| `DWDP/dispatcher` | Deterministic expert-major packing. |
+| `DWDP/scheduler` | Reusable schedule metadata and execution order. |
+| `DWDP/comms_planner` | Single-GPU communication plans and topology metadata. |
+| `DWDP/communication` | C++20/CUDA stream, event, cache, IPC, and residency ABI. |
+| `DWDP/executor` | Local expert execution, workspaces, weight views, and grouped-GEMM kernels. |
+| `DWDP/merger` | Packed expert-output reconstruction. |
+| `DWDP/runtime` | Stage orchestration, profiling, and correctness utilities. |
+| `DWDP/adapters` | Hugging Face Qwen MoE extraction and model patching. |
+| `benchmarks` | Focused component and end-to-end benchmark drivers. |
+| `tests` | Unit, contract, CUDA-gated, and integration tests. |
+| `docs` | Module and phase documentation. |
+
+## Installation and build
+
+Python 3.10 or newer is required.
 
 ```bash
-dwdp run --model /path/to/model --backend dwdp --prompt "Hello"
+python -m pip install -e .
+python -m pytest -q
 ```
 
-Equivalent module form:
+The optional native communication library requires CMake 3.18+, a C++20
+compiler, and a CUDA toolkit:
+
+```bash
+cmake -S DWDP/communication -B build/communication
+cmake --build build/communication --parallel
+```
+
+Run CUDA-dependent tests only on a CUDA host:
+
+```bash
+python -m pytest -q tests/executor/test_grouped_matmul.py
+```
+
+## Supported environment
+
+The Python runtime supports CPU correctness tests and CUDA execution through
+PyTorch. The native communication library targets CUDA 12.x and C++20. The
+included full-model benchmark was designed for an NVIDIA T4 with 16 GB VRAM,
+FP16 compute, and 4-bit NF4 model weights. Ampere-or-newer GPUs are required
+for BF16 Tensor Core validation. Triton is optional for the CUDA-gated grouped
+matmul benchmark and must match the installed PyTorch/CUDA environment.
+
+## Quick start
 
 ```bash
 python -m dwdp run --model /path/to/model --backend dwdp --prompt "Hello"
+python -m dwdp benchmark --model /path/to/model --backend hf --compare dwdp
+python -m dwdp profile --model /path/to/model --prompt "Hello"
 ```
 
-Benchmark Hugging Face against DWDP:
+For a reproducible Qwen T4 comparison:
 
 ```bash
-dwdp benchmark --model /path/to/model --backend hf --compare dwdp
+bash scripts/benchmark_colab.sh --warmup 2 --iters 5
 ```
 
-### Google Colab T4 benchmark
+The command writes a timestamped directory under `results/` containing JSON,
+Markdown, correctness, environment, memory, runtime-breakdown, and profiler
+artifacts. Use `--no-profile` only when collecting a quick latency sample.
 
-For a real-model comparison on a Colab T4, select **Runtime > Change runtime type > T4 GPU**, clone this repository, and run:
+## Benchmark methodology
+
+Benchmark a warmed-up model with a fixed prompt, generation length, seed,
+precision, quantization mode, batch size, and device. Measure both native
+Hugging Face and DWDP in isolated model loads. Record TTFT, prefill, decode,
+throughput, peak allocated memory, module timing, and output/token parity.
+CUDA timings must synchronize only at measurement boundaries; no benchmark is
+valid if it includes compilation, download, or first-use initialization.
+
+Focused component benchmarks are in `benchmarks/`:
 
 ```bash
-git clone https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git
-cd DWDP-Triton-MoE-Inference-Engine
-bash scripts/benchmark_colab.sh
+python benchmarks/benchmark_executor.py --device cuda
+python benchmarks/benchmark_dispatcher.py --device cuda
+python benchmarks/benchmark_router.py --device cuda
+python benchmarks/benchmark_scheduler.py --device cuda
 ```
 
-Equivalent Colab notebook cells:
-
-```python
-!git clone https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git
-%cd DWDP-Triton-MoE-Inference-Engine
-!bash scripts/benchmark_colab.sh
-```
-
-If the repository is already cloned in the current Colab runtime, use:
-
-```python
-%cd /content/DWDP-Triton-MoE-Inference-Engine
-!bash scripts/benchmark_colab.sh
-```
-
-For a private or gated Hugging Face model, add a secret named `HF_TOKEN` under **Colab Secrets** and enable notebook access. The script reads it automatically, so the only benchmark command is:
-
-```python
-!bash scripts/benchmark_colab.sh
-```
-
-The token provides authentication for Hugging Face downloads; download speed still depends on Colab/Hugging Face network conditions. Hugging Face model files are cached after the first run.
-
-You can also pass a token directly, although it may be saved in notebook history:
-
-```python
-!bash scripts/benchmark_colab.sh --use "hf_your_token_here"
-```
-
-The default command runs the full benchmark and profiler. To skip the extra profiler pass:
-
-```python
-!bash scripts/benchmark_colab.sh --no-profile
-```
-
-After completion, list the generated report folders:
-
-```python
-!find results -maxdepth 2 -type f | sort
-```
-
-Download the latest Markdown report:
-
-```python
-from google.colab import files
-from pathlib import Path
-
-reports = sorted(Path("results").glob("*/report.md"))
-files.download(str(reports[-1]))
-```
-
-The script installs the required packages, loads `Qwen/Qwen1.5-MoE-A2.7B` with 4-bit NF4 bitsandbytes quantization, and benchmarks both the native Transformers implementation and the DWDP-patched implementation. It uses the same prompt and generation settings for both runs, unloads the first model before loading the second, and prints latency, tokens/sec, and sample output.
-
-Every run also creates a timestamped report directory, for example `results/2026-07-19_12-34-56_qwen_qwen1.5-moe-a2.7b_hf_vs_dwdp_tesla_t4_iter_50/`. The directory contains `report.md`, `report.json`, `benchmark_config.json`, `environment.json`, `correctness.json`, `runtime_statistics.json`, `profiler.json`, and metadata. The folder name records the run date/time, model, backend comparison, detected GPU, and iteration count.
-
-Existing benchmark snapshots are kept under `results/` by date and GPU, and future benchmark reports should remain in that directory.
-
-Use a custom prompt or change the benchmark length:
-
-```bash
-bash scripts/benchmark_colab.sh \
-  --prompt "Explain mixture-of-experts inference in one paragraph." \
-  --max-new-tokens 64 --warmup 2 --iters 5
-```
-
-For private or gated Hugging Face models, provide a token through the Colab environment or command line. `--use` is accepted as a short alias:
-
-```bash
-export HF_TOKEN="hf_..."
-bash scripts/benchmark_colab.sh
-
-# Or pass it directly (the token may be visible in shell history):
-bash scripts/benchmark_colab.sh --use "hf_..."
-```
-
-Detailed profiling is enabled by default and runs one extra generation pass for both backends:
-
-```bash
-bash scripts/benchmark_colab.sh
-```
-
-The profiling report summarizes Python/orchestration labels, dispatcher, gather/index operations, GEMM-heavy expert work, tensor copies, synchronization, and the top Torch operators. It is written to `profiler.json` inside the timestamped report directory. Python time is represented by CPU-side profiler time; exact Python-vs-CUDA attribution requires a separate Nsight Systems trace.
-
-Skip the profiling pass only when you need a faster run:
-
-```bash
-bash scripts/benchmark_colab.sh --no-profile
-```
-
-The default 4-bit mode is intended for a 16 GB T4. An 8-bit run is available when there is enough free VRAM:
-
-```bash
-bash scripts/benchmark_colab.sh --quantization 8bit
-```
-
-The full report is written automatically. To also save a compact machine-readable summary at a custom path:
-
-```bash
-bash scripts/benchmark_colab.sh --output-json results/colab_t4.json
-```
-
-To rerun without reinstalling packages, use `SKIP_INSTALL=1`. The script requires CUDA and is expected to be run on a Colab GPU, not in a CPU-only checkout.
-
-Profile one generation pass:
-
-```bash
-dwdp profile --model /path/to/model --prompt "Hello"
-```
-
-Use the runtime from Python:
-
-```python
-from dwdp import DWDPRuntime
-
-runtime = DWDPRuntime.from_pretrained("/path/to/model")
-output = runtime.generate("Hello")
-```
-
-Wrap an already loaded Hugging Face model:
-
-```python
-from transformers import AutoModelForCausalLM
-from dwdp import DWDPRuntime
-
-model = AutoModelForCausalLM.from_pretrained("/path/to/model")
-runtime = DWDPRuntime.wrap(model)
-```
-
-Bind one explicit MoE layer when you want to build the reference runtime directly:
-
-```python
-runtime = DWDPRuntime.build_reference(
-    hidden_size=4096,
-    num_experts=64,
-    top_k=2,
-    experts=experts,
-)
-```
-
-The command names map directly to the CLI modules:
-
-- `dwdp run` loads a model and calls generation through the runtime wrapper.
-- `dwdp benchmark` runs repeated generation and prints latency and throughput.
-- `dwdp profile` enables the runtime profiler for one pass.
-- `python -m dwdp ...` and `dwdp ...` are equivalent entrypoints; the first runs the package directly and the second uses the installed console script.
-- `DWDPRuntime.wrap(...)` keeps an existing HF model and routes supported MoE work through DWDP.
-- `DWDPRuntime.build_reference(...)` is the lower-level path for explicit expert modules and direct pipeline testing.
-
-## Benchmarking
-
-There are two benchmark paths in this repo.
-
-The CLI path is lightweight:
-
-```bash
-dwdp benchmark --model /path/to/model --backend hf --compare dwdp
-```
-
-It runs repeated generation, prints average latency and tokens/sec, and is meant for quick comparisons.
-
-The reporting package is the reproducible experiment path. It creates a timestamped results directory with Markdown and JSON artifacts:
-
-- `report.md`
-- `report.json`
-- `benchmark_config.json`
-- `environment.json`
-- `profiler.json`
-- `correctness.json`
-- `runtime_statistics.json`
-- `metadata.json`
-
-Typical Python flow:
-
-```python
-from dwdp.benchmarking import (
-    BackendPerformance,
-    BenchmarkConfig,
-    BenchmarkReport,
-    BenchmarkReportWriter,
-    CorrectnessMetrics,
-    EnvironmentMetadata,
-    GenerationConfig,
-    MemoryMetrics,
-    PerformanceComparison,
-    ReportMetadata,
-    RuntimeBreakdown,
-    RuntimeStatistics,
-)
-
-report = BenchmarkReport(
-    metadata=ReportMetadata(experiment_name="qwen15moe_hf_vs_dwdp"),
-    config=BenchmarkConfig(
-        model_name="Qwen/Qwen1.5-MoE-A2.7B",
-        checkpoint="/path/to/model",
-        prompt="Hello",
-        batch_size=1,
-        sequence_length=16,
-        generation=GenerationConfig(max_new_tokens=32),
-        dtype="float16",
-        device="cuda",
-        random_seed=0,
-    ),
-    environment=EnvironmentMetadata(...),
-    performance=PerformanceComparison(
-        huggingface=BackendPerformance(
-            backend="hf",
-            tokens_per_second=12.3,
-            memory=MemoryMetrics(),
-        ),
-        dwdp=BackendPerformance(
-            backend="dwdp",
-            tokens_per_second=18.7,
-            memory=MemoryMetrics(),
-        ),
-        runtime_breakdown=RuntimeBreakdown(),
-    ),
-    correctness=CorrectnessMetrics(torch_allclose=True),
-    runtime_statistics=RuntimeStatistics(),
-)
-
-BenchmarkReportWriter(results_root="results").write(report)
-```
-
-Why the two paths exist:
-
-- `dwdp benchmark` is for quick timing while you are iterating.
-- `DWDP.benchmarking` is for full reports, saved artifacts, and later analysis.
-- The reporting layer does not execute the benchmark itself; it writes the data you collected from your harness.
-
-## Router Module
-
-The repository now includes a production-oriented MoE router package under `DWDP/router`.
-
-The router is responsible only for expert selection:
-
-- router logits
-- routing probabilities
-- top-k expert indices
-- normalized routing weights
-- routing metadata
-
-It does not perform dispatch, expert execution, scheduling, communication, or output merging.
-
-Detailed engineering documentation is available in [docs/router.md](docs/router.md). A package-local overview is available in [DWDP/router/README.md](DWDP/router/README.md).
-
-## Dispatcher Module
-
-The repository also includes a production-oriented dispatcher package under `DWDP/dispatcher`.
-
-The dispatcher consumes completed router output and converts token-major routing assignments into an expert-major physical layout. It is responsible for:
-
-- expert-major grouping
-- per-expert counts
-- expert offsets
-- token permutation
-- inverse permutation
-- packed token indices
-- packed routing weights
-- reusable dispatch metadata
-
-It does not perform routing, expert execution, communication, scheduling, or output merging.
-
-Detailed engineering documentation is available in [docs/dispatcher.md](docs/dispatcher.md). A package-local overview is available in [DWDP/dispatcher/README.md](DWDP/dispatcher/README.md).
-
-## Scheduler Module
-
-The scheduler package under `DWDP/scheduler` consumes `DispatchPlan` and produces `ExecutionPlan`.
-
-The scheduler is responsible only for execution planning:
-
-- expert execution order
-- expert work queues
-- expert-major execution ranges
-- execution priorities
-- stream assignment placeholders
-- dependency metadata placeholders
-- synchronization metadata placeholders
-- scheduler statistics
-
-It does not execute experts, move tensors, launch communication, inspect router output, inspect model weights, or merge outputs.
-
-Detailed engineering documentation is available in [docs/scheduler.md](docs/scheduler.md). A package-local overview is available in [DWDP/scheduler/README.md](DWDP/scheduler/README.md).
-
-## Comms Planner Module
-
-The communication planner package under `DWDP/comms_planner` consumes `ExecutionPlan` and produces `CommunicationPlan`.
-
-The Comms Planner is responsible only for communication planning metadata:
-
-- local and remote expert classification
-- communication graph metadata
-- transfer descriptors
-- communication groups
-- topology metadata
-- dependency metadata
-- synchronization placeholders
-- prefetch placeholders
-- overlap placeholders
-- communication cost estimates
-- communication statistics
-
-It does not execute communication, move tensors, allocate communication buffers, prefetch weights, execute experts, launch CUDA kernels, launch collectives, or mutate Scheduler output.
-
-Detailed engineering documentation is available in [docs/comms_planner.md](docs/comms_planner.md). A package-local overview is available in [DWDP/comms_planner/README.md](DWDP/comms_planner/README.md).
-
-## Executor Module
-
-The executor package under `DWDP/executor` consumes hidden states, `DispatchPlan`, `ExecutionPlan`, and `CommunicationPlan`, then produces `ExecutorOutput`.
-
-The Executor is responsible only for expert computation:
-
-- gather token activations for scheduled expert ranges
-- execute expert modules
-- apply routing weights
-- write packed expert outputs
-- emit metadata required by the future Merger
-
-It does not route, dispatch, schedule, plan communication, execute communication, or merge outputs.
-
-Detailed engineering documentation is available in [docs/executor.md](docs/executor.md). A package-local overview is available in [DWDP/executor/README.md](DWDP/executor/README.md).
-
-## Merger Module
-
-The merger package under `DWDP/merger` consumes `ExecutorOutput` and reconstructs the final hidden states for the next Transformer layer.
-
-The Merger is responsible only for output reconstruction:
-
-- restore token-major assignment order
-- accumulate Top-K expert outputs
-- optionally apply routing weights
-- reshape back to the original token layout
-- emit merge statistics and metadata
-
-It does not route, dispatch, schedule, plan communication, execute communication, execute experts, or inspect upstream runtime plans.
-
-Detailed engineering documentation is available in [docs/merger.md](docs/merger.md). A package-local overview is available in [DWDP/merger/README.md](DWDP/merger/README.md).
-
-## Runtime Integration Layer
-
-The runtime integration package under `DWDP/runtime` orchestrates the complete MoE pipeline:
-
-Router -> Dispatcher -> Scheduler -> Comms Planner -> Executor -> Merger
-
-The runtime owns stage modules and reusable workspaces, exposes a HF-style `DWDPRuntime` API, and provides adapter, profiling, correctness, CLI, and benchmark scaffolding.
-
-Detailed engineering documentation is available in [docs/runtime.md](docs/runtime.md). A package-local overview is available in [DWDP/runtime/README.md](DWDP/runtime/README.md).
-
-## Hugging Face Adapter Layer
-
-The adapter package under `DWDP/adapters` automatically detects supported Hugging Face MoE models and replaces only their MoE blocks with DWDP-backed execution.
-
-The current automatic target is Qwen1.5/Qwen2-style MoE blocks. The adapter preserves native Hugging Face tokenization, attention, KV cache, generation, sampling, checkpoint loading, and non-MoE layers.
-
-Detailed engineering documentation is available in [docs/adapters.md](docs/adapters.md). A package-local overview is available in [DWDP/adapters/README.md](DWDP/adapters/README.md).
-
-## Benchmark Reporting
-
-The benchmark reporting package under `DWDP/benchmarking` provides reproducible experiment directories, structured JSON artifacts, Markdown reports, environment capture, correctness metrics, runtime statistics, and future extension points for long-term performance tracking.
-
-Detailed documentation is available in [docs/benchmark_reporting.md](docs/benchmark_reporting.md).
+## Profiling
+
+Set runtime profiling only for trace collection; normal inference deliberately
+does not create `record_function` ranges. The Colab driver writes
+`profiler.json`, grouping launcher, gather, GEMM, copy, synchronization, and
+DWDP-stage operators. Use Nsight Systems for stream-level timelines and Nsight
+Compute for kernel occupancy and memory analysis.
+
+## Optimization strategy
+
+Phase 2 prioritizes the executor because its historical profile is the largest
+runtime component. Current hot-path measures include persistent workspaces,
+direct weighted-output writes, cached expert handles, compact schedule
+materialization, minimal router/scheduler metadata in the runtime path, and no
+default profiling scopes. Changes must retain output parity and be retained
+only after benchmark comparison on CUDA hardware.
+
+## Current limitations and roadmap
+
+The default executor intentionally retains a small Python loop over active
+experts. Hugging Face Qwen experts may be independently stored modules and may
+use bitsandbytes quantized linear layers; PyTorch cannot batch arbitrary module
+calls without either changing their storage format or invoking a compatible
+grouped kernel. DWDP therefore does not materialize duplicated packed weights
+on the production path. The existing Triton grouped-matmul code is a
+CUDA-gated kernel benchmark boundary, not a replacement for quantized HF
+experts.
+
+The next execution backend requires a storage-preserving pointer-array or
+quantization-aware grouped GEMM implementation, validated against the model's
+native kernels. Multi-GPU weight transfers are represented by the native
+communication ABI but are not enabled by the single-GPU Python execution path.
+
+## Contributing
+
+Keep changes scoped to the established architecture. Add correctness coverage,
+run formatting and CPU tests locally, and run CUDA tests plus a before/after
+benchmark on supported hardware for any hot-path modification. Do not add a
+synchronization, allocation, or tensor conversion to an inference loop without
+a measured justification. See [Phase 1](docs/phase1.md) for the contract that
+Phase 2 optimizes.
