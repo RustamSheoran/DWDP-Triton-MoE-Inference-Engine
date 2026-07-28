@@ -2,10 +2,17 @@
 
 #include "cuda_check.h"
 #include <stdexcept>
+
 namespace dwdp::communication {
-long long PeerTopology::key(int a, int b) {
-  return (static_cast<long long>(a) << 32) | static_cast<unsigned int>(b);
+
+std::uint64_t PeerTopology::key(int source, int destination) {
+  const auto source_word = static_cast<std::uint32_t>(source);
+  const auto destination_word = static_cast<std::uint32_t>(destination);
+  const auto source_bits = static_cast<std::uint64_t>(source_word);
+  const auto destination_bits = static_cast<std::uint64_t>(destination_word);
+  return (source_bits << 32U) | destination_bits;
 }
+
 bool PeerTopology::canAccess(int source, int destination) {
   if (source < 0 || destination < 0)
     throw std::invalid_argument("invalid GPU ordinal");
@@ -21,13 +28,13 @@ bool PeerTopology::canAccess(int source, int destination) {
     DWDP_CUDA_CHECK(cudaSetDevice(destination));
     const auto status = cudaDeviceEnablePeerAccess(source, 0);
     if (status != cudaSuccess && status != cudaErrorPeerAccessAlreadyEnabled) {
-      cudaSetDevice(previous);
+      DWDP_CUDA_CHECK(cudaSetDevice(previous));
       DWDP_CUDA_CHECK(status);
     }
-    cudaGetLastError();
     DWDP_CUDA_CHECK(cudaSetDevice(previous));
   }
   cache_.emplace(key(source, destination), accessible != 0);
   return accessible != 0;
 }
+
 } // namespace dwdp::communication

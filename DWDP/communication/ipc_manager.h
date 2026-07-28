@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 namespace dwdp::communication {
+
 class IPCManager final {
 public:
   ~IPCManager() noexcept;
@@ -16,10 +17,13 @@ public:
 
 private:
   std::mutex mutex_;
+
   struct ImportedMapping {
     void *pointer;
     std::size_t references;
   };
+
   std::unordered_map<int, ImportedMapping> imported_;
 };
+
 } // namespace dwdp::communication

@@ -72,6 +72,7 @@ void WeightManager::activate(int expert_id, std::size_t active_buffer) {
     throw std::logic_error("illegal transition to active");
   it->second.state = ResidentState::kActive;
 }
+
 void WeightManager::evict(int expert_id) {
   std::scoped_lock lock(mutex_);
   auto it = records_.find(expert_id);
@@ -86,6 +87,7 @@ void WeightManager::evict(int expert_id) {
   it->second.staging_pointer = nullptr;
   it->second.state = ResidentState::kEvicted;
 }
+
 void WeightManager::publishIPC(int expert_id, void *ipc_pointer) {
   if (ipc_pointer == nullptr)
     throw std::invalid_argument("IPC pointer must be non-null");
@@ -102,6 +104,7 @@ void WeightManager::publishIPC(int expert_id, void *ipc_pointer) {
   it->second.state = ResidentState::kActive;
   state_changed_.notify_all();
 }
+
 std::vector<int> WeightManager::invalidateBuffer(std::size_t buffer_index) {
   std::scoped_lock lock(mutex_);
   std::vector<int> ids;
@@ -141,6 +144,7 @@ ExpertRecord WeightManager::getRecord(int expert_id) const {
     throw std::out_of_range("expert is not registered");
   return it->second;
 }
+
 ExpertRecord WeightManager::waitForResident(int expert_id) const {
   std::unique_lock lock(mutex_);
   state_changed_.wait(lock, [&] {
@@ -154,9 +158,11 @@ ExpertRecord WeightManager::waitForResident(int expert_id) const {
     throw std::runtime_error("expert prefetch failed or was not scheduled");
   return it->second;
 }
+
 std::size_t WeightManager::copyEventIndex(int expert_id) const {
   return getRecord(expert_id).copy_event_index;
 }
+
 void WeightManager::markAccessed(int expert_id, std::uint64_t timestamp) {
   std::scoped_lock lock(mutex_);
   auto it = records_.find(expert_id);
@@ -165,6 +171,7 @@ void WeightManager::markAccessed(int expert_id, std::uint64_t timestamp) {
   ++it->second.reference_count;
   it->second.last_access_timestamp = timestamp;
 }
+
 void WeightManager::release(int expert_id) {
   std::scoped_lock lock(mutex_);
   auto it = records_.find(expert_id);
@@ -173,9 +180,11 @@ void WeightManager::release(int expert_id) {
   if (it->second.reference_count != 0)
     --it->second.reference_count;
 }
+
 void *WeightManager::getDevicePointer(int expert_id) const {
   return getRecord(expert_id).device_pointer;
 }
+
 void *WeightManager::getResidentPointer(int expert_id) const {
   const auto record = getRecord(expert_id);
   if (!record.resident || record.resident_pointer == nullptr ||
@@ -183,10 +192,12 @@ void *WeightManager::getResidentPointer(int expert_id) const {
     throw std::logic_error("expert is not resident");
   return record.resident_pointer;
 }
+
 bool WeightManager::contains(int expert_id) const {
   std::scoped_lock lock(mutex_);
   return records_.find(expert_id) != records_.end();
 }
+
 void WeightManager::clear() {
   std::scoped_lock lock(mutex_);
   records_.clear();

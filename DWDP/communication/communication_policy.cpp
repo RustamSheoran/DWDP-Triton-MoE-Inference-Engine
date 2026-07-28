@@ -1,6 +1,7 @@
 #include "communication_policy.h"
 
 namespace dwdp::communication {
+
 CommunicationDecision CommunicationPolicy::decide(const ExpertRecord &r, bool peer_access) const {
   if (r.state == ResidentState::kActive || r.state == ResidentState::kStaged)
     return {CommunicationPath::kLocal};
@@ -10,4 +11,5 @@ CommunicationDecision CommunicationPolicy::decide(const ExpertRecord &r, bool pe
     return {CommunicationPath::kP2P};
   return {CommunicationPath::kCopy};
 }
+
 } // namespace dwdp::communication

@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace dwdp::communication {
+
 enum class TransferState : std::uint8_t {
   kCreated,
   kQueued,
@@ -21,6 +22,7 @@ enum class TransferState : std::uint8_t {
   kFailed,
   kCancelled
 };
+
 struct TransferTask {
   int expert_id;
   int priority;
@@ -29,6 +31,7 @@ struct TransferTask {
   std::size_t retries{0};
   std::function<void(TransferState)> completion;
 };
+
 class TransferScheduler final {
 public:
   std::shared_ptr<TransferTask> submit(int expert_id, int priority,
@@ -46,6 +49,7 @@ private:
       return a->priority == b->priority ? a->sequence > b->sequence : a->priority < b->priority;
     }
   };
+
   void transition(TransferTask &task, TransferState from, TransferState to);
   std::mutex mutex_;
   std::condition_variable ready_;
@@ -56,4 +60,5 @@ private:
   std::uint64_t sequence_{0};
   bool closed_{false};
 };
+
 } // namespace dwdp::communication

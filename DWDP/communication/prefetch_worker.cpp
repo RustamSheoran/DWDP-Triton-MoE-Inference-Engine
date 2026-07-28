@@ -1,18 +1,22 @@
 #include "prefetch_worker.h"
 
 namespace dwdp::communication {
+
 PrefetchWorker::PrefetchWorker(WeightManager &w, CacheManager &c, IPCManager &i,
                                DoubleBufferedStaging &b, CUDAEventPool &e, PrefetchQueue &q,
                                CUDAStreamPool &s)
     : weights_(w), cache_(c), ipc_(i), staging_(b), events_(e), queue_(q), streams_(s) {
 }
+
 PrefetchWorker::~PrefetchWorker() noexcept {
   stop();
 }
+
 void PrefetchWorker::start() {
   if (!running_.exchange(true))
     thread_ = std::thread(&PrefetchWorker::run, this);
 }
+
 void PrefetchWorker::stop() noexcept {
   if (running_.exchange(false)) {
     queue_.close();
@@ -21,11 +25,13 @@ void PrefetchWorker::stop() noexcept {
       thread_.join();
   }
 }
+
 void PrefetchWorker::notifyBufferAvailable() {
   std::scoped_lock lock(mutex_);
   buffer_available_ = true;
   ready_.notify_one();
 }
+
 void PrefetchWorker::run() noexcept {
   while (running_) {
     const auto request = queue_.waitDequeue();
@@ -62,4 +68,5 @@ void PrefetchWorker::run() noexcept {
     }
   }
 }
+
 } // namespace dwdp::communication

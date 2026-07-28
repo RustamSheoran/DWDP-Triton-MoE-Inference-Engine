@@ -1,6 +1,7 @@
 #pragma once
 
 namespace dwdp::communication {
+
 inline constexpr const char *kRuntimeInvariants[] = {
     "Executor resolves only resident pointers through CommunicationEngine.",
     "Only CommunicationEngine-owned resources create CUDA work.",
@@ -10,4 +11,5 @@ inline constexpr const char *kRuntimeInvariants[] = {
     "Pinned experts are never evicted.",
     "Imported IPC mappings are unique per exported expert and reused.",
 };
+
 } // namespace dwdp::communication

@@ -86,6 +86,7 @@ cudaStream_t CUDAStreamPool::copy() const {
 int CUDAStreamPool::device() const noexcept {
   return device_id_;
 }
+
 bool CUDAStreamPool::initialized() const noexcept {
   return initialized_;
 }

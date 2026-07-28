@@ -14,6 +14,7 @@
 #include <thread>
 
 namespace dwdp::communication {
+
 class PrefetchWorker final {
 public:
   PrefetchWorker(WeightManager &, CacheManager &, IPCManager &, DoubleBufferedStaging &,
@@ -38,4 +39,5 @@ private:
   std::condition_variable ready_;
   bool buffer_available_{true};
 };
+
 } // namespace dwdp::communication

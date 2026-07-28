@@ -1,11 +1,14 @@
 #include "transfer_scheduler.h"
 #include <stdexcept>
+
 namespace dwdp::communication {
+
 void TransferScheduler::transition(TransferTask &t, TransferState from, TransferState to) {
   if (t.state != from)
     throw std::logic_error("illegal transfer transition");
   t.state = to;
 }
+
 std::shared_ptr<TransferTask> TransferScheduler::submit(int id, int priority,
                                                         std::function<void(TransferState)> cb) {
   if (id < 0)
@@ -24,6 +27,7 @@ std::shared_ptr<TransferTask> TransferScheduler::submit(int id, int priority,
   ready_.notify_one();
   return task;
 }
+
 std::optional<std::shared_ptr<TransferTask>> TransferScheduler::take() {
   std::unique_lock lock(mutex_);
   ready_.wait(lock, [&] { return closed_ || !queue_.empty(); });
@@ -34,6 +38,7 @@ std::optional<std::shared_ptr<TransferTask>> TransferScheduler::take() {
   transition(*task, TransferState::kQueued, TransferState::kRunning);
   return task;
 }
+
 void TransferScheduler::complete(const std::shared_ptr<TransferTask> &t) {
   std::function<void(TransferState)> cb;
   {
@@ -45,6 +50,7 @@ void TransferScheduler::complete(const std::shared_ptr<TransferTask> &t) {
   if (cb)
     cb(TransferState::kCompleted);
 }
+
 void TransferScheduler::fail(const std::shared_ptr<TransferTask> &t, bool retryable) {
   std::function<void(TransferState)> cb;
   {
@@ -62,6 +68,7 @@ void TransferScheduler::fail(const std::shared_ptr<TransferTask> &t, bool retrya
   if (cb)
     cb(TransferState::kFailed);
 }
+
 void TransferScheduler::cancel(int id) {
   std::scoped_lock lock(mutex_);
   const auto it = coalesced_.find(id);
@@ -74,9 +81,11 @@ void TransferScheduler::cancel(int id) {
   }
   coalesced_.erase(it);
 }
+
 void TransferScheduler::close() {
   std::scoped_lock lock(mutex_);
   closed_ = true;
   ready_.notify_all();
 }
+
 } // namespace dwdp::communication

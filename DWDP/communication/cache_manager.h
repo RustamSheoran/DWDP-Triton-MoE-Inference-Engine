@@ -8,6 +8,7 @@
 #include <vector>
 
 namespace dwdp::communication {
+
 class CacheManager final {
 public:
   explicit CacheManager(std::size_t capacity_bytes);
@@ -27,6 +28,7 @@ private:
     std::size_t pins;
     std::list<int>::iterator lru;
   };
+
   void touchLocked(std::unordered_map<int, Entry>::iterator entry);
   std::size_t capacity_bytes_;
   std::size_t used_bytes_{0};
@@ -34,4 +36,5 @@ private:
   std::unordered_map<int, Entry> entries_;
   mutable std::mutex mutex_;
 };
+
 } // namespace dwdp::communication

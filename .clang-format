@@ -7,4 +7,6 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 BreakBeforeBraces: Attach
+SeparateDefinitionBlocks: Always
+WrapNamespaceBodyWithEmptyLines: Always
 SortIncludes: CaseSensitive
