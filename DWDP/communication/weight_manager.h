@@ -17,7 +17,13 @@ enum class BufferLocation : std::uint8_t {
   kStagingB = 2,
   kImportedIPC = 3
 };
-enum class ResidentState : std::uint8_t { kUnloaded, kLoading, kStaged, kActive, kEvicted };
+enum class ResidentState : std::uint8_t {
+  kUnloaded,
+  kLoading,
+  kStaged,
+  kActive,
+  kEvicted
+};
 
 struct ExpertRecord {
   int expert_id{-1};

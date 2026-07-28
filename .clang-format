@@ -1,11 +1,12 @@
 BasedOnStyle: LLVM
 Language: Cpp
-ColumnLimit: 100
+ColumnLimit: 88
 IndentWidth: 2
 ContinuationIndentWidth: 4
 AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+InsertBraces: true
 BreakBeforeBraces: Attach
 SeparateDefinitionBlocks: Always
 WrapNamespaceBodyWithEmptyLines: Always

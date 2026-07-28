@@ -27,10 +27,12 @@ void *IPCManager::importExpert(int expert_id, const cudaIpcMemHandle_t &handle) 
 void IPCManager::closeImported(int expert_id) {
   std::scoped_lock lock(mutex_);
   const auto it = imported_.find(expert_id);
-  if (it == imported_.end())
+  if (it == imported_.end()) {
     return;
-  if (--it->second.references != 0)
+  }
+  if (--it->second.references != 0) {
     return;
+  }
   ipc::closeHandle(it->second.pointer);
   imported_.erase(it);
 }
@@ -38,8 +40,9 @@ void IPCManager::closeImported(int expert_id) {
 void IPCManager::closeAll() noexcept {
   std::scoped_lock lock(mutex_);
   for (const auto &[_, mapping] : imported_) {
-    if (mapping.pointer != nullptr)
+    if (mapping.pointer != nullptr) {
       cudaIpcCloseMemHandle(mapping.pointer);
+    }
   }
   imported_.clear();
 }

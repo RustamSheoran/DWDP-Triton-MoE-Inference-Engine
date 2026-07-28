@@ -6,11 +6,13 @@
 namespace dwdp::communication {
 
 void PrefetchQueue::enqueue(PrefetchRequest request) {
-  if (request.expert_id < 0)
+  if (request.expert_id < 0) {
     throw std::invalid_argument("expert_id must be non-negative");
+  }
   std::unique_lock lock(mutex_);
-  if (closed_)
+  if (closed_) {
     throw std::logic_error("prefetch queue is closed");
+  }
   queue_.push(request);
   lock.unlock();
   ready_.notify_one();
@@ -19,8 +21,9 @@ void PrefetchQueue::enqueue(PrefetchRequest request) {
 std::optional<PrefetchRequest> PrefetchQueue::waitDequeue() {
   std::unique_lock lock(mutex_);
   ready_.wait(lock, [this] { return closed_ || !queue_.empty(); });
-  if (queue_.empty())
+  if (queue_.empty()) {
     return std::nullopt;
+  }
   const PrefetchRequest request = queue_.front();
   queue_.pop();
   return request;
@@ -28,8 +31,9 @@ std::optional<PrefetchRequest> PrefetchQueue::waitDequeue() {
 
 std::optional<PrefetchRequest> PrefetchQueue::dequeue() {
   std::scoped_lock lock(mutex_);
-  if (queue_.empty())
+  if (queue_.empty()) {
     return std::nullopt;
+  }
   const PrefetchRequest request = queue_.front();
   queue_.pop();
   return request;
@@ -37,8 +41,9 @@ std::optional<PrefetchRequest> PrefetchQueue::dequeue() {
 
 std::optional<PrefetchRequest> PrefetchQueue::peek() const {
   std::scoped_lock lock(mutex_);
-  if (queue_.empty())
+  if (queue_.empty()) {
     return std::nullopt;
+  }
   return queue_.front();
 }
 
@@ -60,8 +65,9 @@ void PrefetchQueue::close() {
 
 void PrefetchQueue::reset() {
   std::scoped_lock lock(mutex_);
-  if (!queue_.empty())
+  if (!queue_.empty()) {
     throw std::logic_error("cannot reset a non-empty prefetch queue");
+  }
   closed_ = false;
 }
 

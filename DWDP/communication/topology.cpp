@@ -1,6 +1,7 @@
 #include "topology.h"
 
 #include "cuda_check.h"
+
 #include <stdexcept>
 
 namespace dwdp::communication {
@@ -14,12 +15,14 @@ std::uint64_t PeerTopology::key(int source, int destination) {
 }
 
 bool PeerTopology::canAccess(int source, int destination) {
-  if (source < 0 || destination < 0)
+  if (source < 0 || destination < 0) {
     throw std::invalid_argument("invalid GPU ordinal");
+  }
   std::scoped_lock lock(mutex_);
   const auto found = cache_.find(key(source, destination));
-  if (found != cache_.end())
+  if (found != cache_.end()) {
     return found->second;
+  }
   int accessible = 0;
   DWDP_CUDA_CHECK(cudaDeviceCanAccessPeer(&accessible, destination, source));
   if (accessible != 0) {

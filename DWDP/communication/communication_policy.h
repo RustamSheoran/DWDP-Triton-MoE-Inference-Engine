@@ -15,7 +15,8 @@ public:
   explicit CommunicationPolicy(int local_gpu) : local_gpu_(local_gpu) {
   }
 
-  [[nodiscard]] CommunicationDecision decide(const ExpertRecord &record, bool peer_access) const;
+  [[nodiscard]] CommunicationDecision decide(const ExpertRecord &record,
+                                             bool peer_access) const;
 
 private:
   int local_gpu_;
