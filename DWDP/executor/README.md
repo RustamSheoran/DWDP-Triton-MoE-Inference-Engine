@@ -146,10 +146,9 @@ not an acceptable production trade-off. The loop is therefore retained only at
 the module invocation boundary; its surrounding schedule extraction, handle
 lookup, workspaces, output writes, and routing-weight path are minimized.
 
-The Triton grouped-matmul implementation is a CUDA-gated dense-kernel boundary
-for compatible packed weights. It is deliberately not selected for quantized
-Hugging Face experts until a parity-tested, storage-preserving grouped backend
-is available.
+For compatible FP16/BF16 Qwen SwiGLU experts, the Triton backend uses the
+storage-preserving grouped path described below. Other environments, including
+CPU development, retain the PyTorch reference fallback.
 
 ## Kernel Boundaries
 
@@ -189,23 +188,23 @@ therefore exposes storage-preserving matrix views rather than eagerly calling
 original parameter storage. Explicit `materialize()` methods exist only for a
 future backend that intentionally chooses a packed-weight memory tradeoff.
 
-`TritonExpertExecutor` is registered as `backend="triton"`. It validates and
-owns this provider, but currently delegates execution to `PyTorchExecutor` and
-reports `triton_reference_fallback`. No Triton kernel is launched yet.
+`TritonExpertExecutor` is registered as `backend="triton"`. On CUDA it builds
+one non-owning `TensorList` from finalized dispatch/scheduling plans and the
+executor workspace. Its contiguous Structure-of-Arrays fields hold pointers,
+expert ids, token ranges, dimensions, leading dimensions, dtype codes, and
+workspace indices. The workspace owns those reusable metadata buffers; neither
+the descriptor nor the provider copies activations or model weights. Zero-work
+experts are omitted. The backend fuses token gather with gate/up GEMMs and
+SwiGLU, then fuses down projection, routing weight, and packed output writes.
+CPU and Triton-less environments report `triton_reference_fallback`.
 
-## Grouped GEMM Prototype
+## DWDP Pointer-Array Kernel
 
-`kernels/grouped_matmul.py` contains the first real Triton kernel. It computes
-an expert-major projection from activations `[N, K]`, physical packed weights
-`[E, O, K]`, and dispatcher `expert_offsets [E + 1]`, producing `[N, O]` in
-the same deterministic expert-major order. It has a PyTorch reference and is
-tested independently of full expert MLP execution.
-
-The storage-preserving provider remains the default representation. The
-prototype uses explicit `materialize_expert_major_weights()` when it needs a
-physical `[E, O, K]` tensor, and `TritonExpertExecutor.forward()` does not yet
-call this path. This keeps the first kernel measurable without introducing
-silent model-weight duplication into the runtime.
+`kernels/dwdp_grouped.py` is purpose-built for DWDP. It uses TensorList pointer
+arrays to dereference each independently allocated Qwen projection directly;
+there is no packed `[E, O, K]` weight tensor or generic grouped-GEMM wrapper.
+Its tile mapping is deliberately compatible with a future persistent work queue
+and dynamic expert scheduling without changing descriptor layout.
 
 ## Tests and Benchmark
 

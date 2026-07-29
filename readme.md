@@ -76,7 +76,7 @@ cmake --build build/communication --parallel
 Run CUDA-dependent tests only on a CUDA host:
 
 ```bash
-python -m pytest -q tests/executor/test_grouped_matmul.py
+python -m pytest -q tests/executor/test_triton_expert_executor.py
 ```
 
 ## Supported environment

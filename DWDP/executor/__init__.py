@@ -8,6 +8,7 @@ from .registry import build_executor, get_executor_class, register_executor
 from .triton import TritonExpertExecutor
 from .weights import ExpertMajorMatrixView, ExpertWeightProvider, FusedGateUpWeightView, QwenSwiGLUWeightProvider, WeightFormat
 from .workspace import ExecutorWorkspace
+from .tensor_list import TensorList
 
 __all__ = [
     "ExecutionMetadata",
@@ -26,6 +27,7 @@ __all__ = [
     "PyTorchExecutor",
     "QwenSwiGLUWeightProvider",
     "TritonExpertExecutor",
+    "TensorList",
     "WeightFormat",
     "build_executor",
     "get_executor_class",

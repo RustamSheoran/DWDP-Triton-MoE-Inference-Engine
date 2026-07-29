@@ -215,27 +215,26 @@ duplicate model weights. Provider construction retains references to those
 original tensors, exposes dtype/device/format metadata for FP16, BF16, FP8,
 and INT4 backends, and makes materialization explicit.
 
-`TritonExpertExecutor` is the registered `triton` backend boundary. In this
-milestone it validates Qwen SwiGLU expert layout and delegates to the PyTorch
-reference executor. Future grouped Triton/CUDA kernels can consume the same
-provider without changing `ExecutorConfig`, plans, or `ExecutorOutput`.
+`TritonExpertExecutor` is the registered `triton` backend boundary. On CUDA it
+builds a single non-owning `TensorList` from finalized plans and reusable
+executor workspace buffers. TensorList uses contiguous Structure-of-Arrays
+metadata (pointers, ids, ranges, dimensions, leading dimensions, dtype and
+workspace fields), which grouped kernels load field-wise without per-expert
+Python descriptors. It owns no activation, output, or weight storage; the
+workspace owns metadata/intermediate allocations and the source modules retain
+weight ownership. The grouped kernels omit zero-work experts, fuse gather with
+gate/up and SwiGLU, then fuse down projection with routing multiplication and
+output writes. CPU or Triton-less execution deliberately uses the reference
+fallback without changing `ExecutorConfig`, plans, or `ExecutorOutput`.
 
-## Grouped Matrix Multiplication Prototype
+## DWDP Pointer-Array Kernel
 
-`executor/kernels/grouped_matmul.py` implements the first Triton execution
-kernel independently from full SwiGLU execution. It consumes expert-major
-activations `[N, K]`, packed physical weights `[E, O, K]`, and
-`DispatchPlan.metadata.expert_offsets`. Triton programs are indexed by expert,
-token tile, and output tile, so all expert ranges execute in one kernel launch
-without Python expert iteration. The output is written directly to `[N, O]` in
-dispatcher order.
-
-The provider's default matrix views preserve separate Hugging Face parameter
-storage. A dense `[E, O, K]` tensor is therefore made only through explicit
-prototype materialization. This copy is excluded from grouped-GEMM benchmark
-timing and is not invoked from `TritonExpertExecutor.forward()`. A future
-packed-weight loader or pointer-array CUDA backend can replace that boundary
-without changing the grouped-matmul call contract.
+`executor/kernels/dwdp_grouped.py` is a DWDP-specific Triton kernel rather
+than a dense grouped-GEMM adapter. Every program reads independent Qwen gate,
+up, and down addresses from TensorList and therefore needs neither packed
+expert weights nor per-iteration repacking. Tile programs are indexed by the
+active descriptor and tile coordinates; this descriptor layout is intentionally
+the stable input for a future persistent work queue and dynamic scheduling.
 
 without changing Executor API.
 

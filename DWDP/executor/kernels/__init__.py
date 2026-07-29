@@ -1,19 +1,10 @@
-"""Kernel replacement boundaries for future optimized expert execution."""
+"""DWDP expert execution kernels."""
 
-from .grouped_matmul import (
-    TRITON_AVAILABLE,
-    grouped_matmul,
-    grouped_matmul_from_dispatch,
-    materialize_expert_major_weights,
-    reference_grouped_matmul,
-)
+from .dwdp_grouped import TRITON_AVAILABLE, grouped_qwen_swiglu
 from .reference import reference_execute_expert
 
 __all__ = [
     "TRITON_AVAILABLE",
-    "grouped_matmul",
-    "grouped_matmul_from_dispatch",
-    "materialize_expert_major_weights",
+    "grouped_qwen_swiglu",
     "reference_execute_expert",
-    "reference_grouped_matmul",
 ]
