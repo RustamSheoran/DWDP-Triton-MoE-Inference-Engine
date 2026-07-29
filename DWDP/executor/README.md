@@ -208,6 +208,17 @@ use separate persistent launches on one stream; stream order supplies their
 dependency without host waiting. There is no packed `[E, O, K]` weight tensor,
 generic grouped-GEMM wrapper, or static expert-to-program assignment.
 
+## Native FP8 Execution
+
+On CUDA devices with native FP8 Tensor Cores, `backend="triton"` automatically
+uses the FP8 persistent specialization. E4M3 is selected first, followed by
+other FP8 dtypes exposed by the installed PyTorch/Triton stack. The explicit
+`backend="triton_fp8"` requires this capability instead of falling back.
+Expert parameter tensors are converted in place once, preserving the tensor
+objects referenced by TensorList; input activations are quantized once per
+forward into reusable workspace storage. FP8 kernels read/write FP8 directly
+and use FP32 accumulation only inside dot products.
+
 ## Tests and Benchmark
 
 Tests live in `tests/executor/test_pytorch_executor.py`.

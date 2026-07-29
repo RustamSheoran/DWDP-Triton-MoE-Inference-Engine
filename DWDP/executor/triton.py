@@ -11,6 +11,8 @@ from DWDP.scheduler.execution import ExecutionPlan
 from .config import ExecutorConfig
 from .experts import ExpertRegistry
 from .extractors import extract_qwen_swiglu_weight_provider
+from .fp8 import convert_qwen_weights_to_fp8_once, quantize_activations_once
+from .kernels.fp8 import execute_persistent_qwen_fp8, select_fp8_dtype
 from .kernels.persistent import TRITON_AVAILABLE, build_persistent_tile_queues, execute_persistent_qwen
 from .metadata import TimingMetadata, WorkspaceMetadata
 from .outputs import ExecutionMetadata, ExecutionStatistics, ExecutorOutput, ExpertOutput, OutputMetadata
@@ -55,6 +57,8 @@ class TritonExpertExecutor(PyTorchExecutor):
         """Run the persistent CUDA path, falling back only where CUDA is absent."""
 
         if not hidden_states.is_cuda or not TRITON_AVAILABLE:
+            if self.config.backend == "triton_fp8":
+                raise RuntimeError("native FP8 execution requires CUDA and Triton")
             output = super().forward(
                 hidden_states, dispatch_plan, execution_plan, communication_plan, workspace=workspace
             )
@@ -66,11 +70,6 @@ class TritonExpertExecutor(PyTorchExecutor):
         validate_executor_inputs(flat_hidden_states, dispatch_plan, execution_plan, communication_plan)
         if self.weight_provider.has_bias:
             raise ValueError("persistent Triton execution does not support biased Qwen projections")
-        output_dtype = self.config.dtype or hidden_states.dtype
-        if output_dtype != hidden_states.dtype:
-            raise ValueError("persistent Triton execution requires output dtype to match activation dtype")
-        if flat_hidden_states.dtype not in (torch.float16, torch.bfloat16):
-            raise ValueError("persistent Triton execution supports float16 and bfloat16 activations")
         if self.config.max_tokens_per_expert is not None:
             counts = execution_plan.expert_counts
             if bool((counts > self.config.max_tokens_per_expert).any().item()):
@@ -79,6 +78,30 @@ class TritonExpertExecutor(PyTorchExecutor):
         # A workspace is mandatory for descriptor lifetime and allocation
         # ownership.  A caller that omits it gets a private, forward-scoped one.
         active_workspace = workspace or ExecutorWorkspace()
+        fp8_dtype = select_fp8_dtype(hidden_states.device)
+        if self.config.backend == "triton_fp8" and fp8_dtype is None:
+            raise RuntimeError("native FP8 execution is unavailable on this CUDA/Triton installation")
+        use_fp8 = fp8_dtype is not None
+        execution_hidden_states = flat_hidden_states
+        output_dtype = self.config.dtype or hidden_states.dtype
+        if use_fp8:
+            assert fp8_dtype is not None
+            # FP8 is the default CUDA execution format.  Parameters are
+            # converted in place once; inputs are quantized once per forward.
+            convert_qwen_weights_to_fp8_once(self.weight_provider, fp8_dtype)
+            execution_hidden_states = active_workspace.get_fp8_input_buffer(
+                flat_hidden_states.shape[0], flat_hidden_states.shape[1],
+                dtype=fp8_dtype,
+                device=hidden_states.device,
+            )
+            quantize_activations_once(flat_hidden_states, execution_hidden_states)
+            output_dtype = fp8_dtype
+        elif self.config.backend == "triton_fp8":
+            raise RuntimeError("native FP8 execution is unavailable")
+        elif output_dtype != hidden_states.dtype:
+            raise ValueError("persistent Triton execution requires output dtype to match activation dtype")
+        if execution_hidden_states.dtype not in (torch.float16, torch.bfloat16) and not use_fp8:
+            raise ValueError("persistent Triton execution supports float16 and bfloat16 activations")
         assignments = dispatch_plan.metadata.num_assignments
         packed_outputs, weighted_outputs = active_workspace.get_output_buffers(
             assignments,
@@ -89,11 +112,11 @@ class TritonExpertExecutor(PyTorchExecutor):
         intermediate = active_workspace.get_intermediate_buffer(
             assignments,
             self.weight_provider.intermediate_size,
-            dtype=hidden_states.dtype,
+            dtype=execution_hidden_states.dtype,
             device=hidden_states.device,
         )
         tensors = TensorList.from_plans(
-            flat_hidden_states,
+            execution_hidden_states,
             dispatch_plan,
             execution_plan,
             active_workspace,
@@ -103,7 +126,10 @@ class TritonExpertExecutor(PyTorchExecutor):
             intermediate,
         )
         queues = build_persistent_tile_queues(tensors, active_workspace)
-        execute_persistent_qwen(tensors, queues)
+        if use_fp8:
+            execute_persistent_qwen_fp8(tensors, queues)
+        else:
+            execute_persistent_qwen(tensors, queues)
 
         host = active_workspace.tensorlist_host_fields
         assert host is not None
@@ -161,3 +187,4 @@ class TritonExpertExecutor(PyTorchExecutor):
 
 
 register_executor("triton", TritonExpertExecutor)
+register_executor("triton_fp8", TritonExpertExecutor)

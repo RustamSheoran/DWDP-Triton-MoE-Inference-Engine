@@ -21,6 +21,7 @@ class ExecutorWorkspace:
     # Grouped Triton execution keeps its transient SwiGLU values here.  This
     # workspace owns the allocation; TensorList only stores its address.
     intermediate_activations: torch.Tensor | None = None
+    fp8_input_activations: torch.Tensor | None = None
     # TensorList metadata has host staging and device-resident SoA buffers.
     # They are grown together and reused across decode iterations.
     tensorlist_device_fields: dict[str, torch.Tensor] | None = None
@@ -128,6 +129,20 @@ class ExecutorWorkspace:
 
         return self._ensure_2d(
             "intermediate_activations", rows, cols, dtype=dtype, device=device
+        )
+
+    def get_fp8_input_buffer(
+        self,
+        rows: int,
+        cols: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Return FP8 activation storage for one input quantization per forward."""
+
+        return self._ensure_2d(
+            "fp8_input_activations", rows, cols, dtype=dtype, device=device
         )
 
     def ensure_tensorlist_capacity(self, required: int, *, device: torch.device) -> int:
@@ -296,6 +311,7 @@ class ExecutorWorkspace:
             self.gathered_activations,
             self.temporary_outputs,
             self.intermediate_activations,
+            self.fp8_input_activations,
             self.persistent_gather_descriptor_indices,
             self.persistent_gather_tile_m,
             self.persistent_gather_tile_n,

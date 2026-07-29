@@ -214,4 +214,16 @@ def _dtype_code(dtype: torch.dtype) -> int:
         return 1
     if dtype == torch.bfloat16:
         return 2
-    raise ValueError("grouped Triton execution supports float16 and bfloat16 only")
+    if dtype in _fp8_dtypes():
+        return 3
+    raise ValueError("Triton execution requires float16, bfloat16, or a supported FP8 dtype")
+
+
+def _fp8_dtypes() -> tuple[torch.dtype, ...]:
+    """Return FP8 dtypes exposed by this PyTorch build without version gates."""
+
+    return tuple(
+        dtype
+        for name in ("float8_e4m3fn", "float8_e4m3fnuz", "float8_e5m2", "float8_e5m2fnuz")
+        if isinstance((dtype := getattr(torch, name, None)), torch.dtype)
+    )

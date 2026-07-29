@@ -238,6 +238,17 @@ This is GPU-side work stealing: no expert is statically assigned to a program.
 SwiGLU and dependent down-projection queues are launched on the same stream,
 so stream order provides stage dependency without host synchronization.
 
+## Native FP8 Execution
+
+The persistent executor prefers native FP8 on capable CUDA hardware. It
+selects E4M3 when the current PyTorch/Triton installation exposes it, otherwise
+chooses the next supported FP8 dtype. `backend="triton_fp8"` makes FP8 support
+mandatory; `backend="triton"` retains the normal persistent path only where
+native FP8 is unavailable. Expert parameters are converted in place once so
+TensorList retains the same model tensor identities. Activations are quantized
+once per forward into reusable FP8 workspace, and dedicated FP8 kernels use
+FP32 accumulation while retaining FP8 inputs, intermediates, and outputs.
+
 without changing Executor API.
 
 ## Distributed Execution
