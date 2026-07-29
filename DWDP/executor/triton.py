@@ -1,4 +1,4 @@
-"""Grouped Triton execution backend for storage-preserving Qwen SwiGLU experts."""
+"""Persistent Triton execution backend for storage-preserving Qwen SwiGLU experts."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from DWDP.scheduler.execution import ExecutionPlan
 from .config import ExecutorConfig
 from .experts import ExpertRegistry
 from .extractors import extract_qwen_swiglu_weight_provider
-from .kernels.dwdp_grouped import TRITON_AVAILABLE, grouped_qwen_swiglu
+from .kernels.persistent import TRITON_AVAILABLE, build_persistent_tile_queues, execute_persistent_qwen
 from .metadata import TimingMetadata, WorkspaceMetadata
 from .outputs import ExecutionMetadata, ExecutionStatistics, ExecutorOutput, ExpertOutput, OutputMetadata
 from .pytorch import PyTorchExecutor
@@ -23,11 +23,11 @@ from .workspace import ExecutorWorkspace
 
 
 class TritonExpertExecutor(PyTorchExecutor):
-    """Execute Qwen experts through a grouped, pointer-described Triton path.
+    """Execute Qwen experts through persistent, pointer-described Triton work.
 
     The public Executor contract and runtime order remain unchanged.  On CUDA,
-    the only object passed to the grouped backend is a :class:`TensorList`;
-    grouped kernels neither import nor inspect pipeline plans.  CPU and
+    TensorList is converted to device-resident tile queues; persistent kernels
+    neither import nor inspect pipeline plans.  CPU and
     Triton-less installations retain the reference path so the runtime remains
     usable in development environments without a GPU.
     """
@@ -41,7 +41,7 @@ class TritonExpertExecutor(PyTorchExecutor):
         super().__init__(config, experts)
         provider = weight_provider or extract_qwen_swiglu_weight_provider(experts)
         if not isinstance(provider, QwenSwiGLUWeightProvider):
-            raise ValueError("grouped Triton execution requires a QwenSwiGLUWeightProvider")
+            raise ValueError("persistent Triton execution requires a QwenSwiGLUWeightProvider")
         self.weight_provider = provider
 
     def forward(
@@ -52,7 +52,7 @@ class TritonExpertExecutor(PyTorchExecutor):
         communication_plan: CommunicationPlan,
         workspace: ExecutorWorkspace | None = None,
     ) -> ExecutorOutput:
-        """Run the grouped CUDA path, falling back only where CUDA is absent."""
+        """Run the persistent CUDA path, falling back only where CUDA is absent."""
 
         if not hidden_states.is_cuda or not TRITON_AVAILABLE:
             output = super().forward(
@@ -65,12 +65,12 @@ class TritonExpertExecutor(PyTorchExecutor):
         flat_hidden_states, token_shape = flatten_hidden_states(hidden_states)
         validate_executor_inputs(flat_hidden_states, dispatch_plan, execution_plan, communication_plan)
         if self.weight_provider.has_bias:
-            raise ValueError("grouped Triton execution does not support biased Qwen projections")
+            raise ValueError("persistent Triton execution does not support biased Qwen projections")
         output_dtype = self.config.dtype or hidden_states.dtype
         if output_dtype != hidden_states.dtype:
-            raise ValueError("grouped Triton execution requires output dtype to match activation dtype")
+            raise ValueError("persistent Triton execution requires output dtype to match activation dtype")
         if flat_hidden_states.dtype not in (torch.float16, torch.bfloat16):
-            raise ValueError("grouped Triton execution supports float16 and bfloat16 activations")
+            raise ValueError("persistent Triton execution supports float16 and bfloat16 activations")
         if self.config.max_tokens_per_expert is not None:
             counts = execution_plan.expert_counts
             if bool((counts > self.config.max_tokens_per_expert).any().item()):
@@ -102,7 +102,8 @@ class TritonExpertExecutor(PyTorchExecutor):
             weighted_outputs,
             intermediate,
         )
-        grouped_qwen_swiglu(tensors)
+        queues = build_persistent_tile_queues(tensors, active_workspace)
+        execute_persistent_qwen(tensors, queues)
 
         host = active_workspace.tensorlist_host_fields
         assert host is not None

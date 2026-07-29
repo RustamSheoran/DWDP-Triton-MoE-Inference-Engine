@@ -7,7 +7,12 @@ import torch
 
 @dataclass(slots=True)
 class ExecutorWorkspace:
-    """Reusable buffers for reference expert execution."""
+    """Reusable reference and persistent-execution buffers.
+
+    Tensor storage is owned by this workspace only for temporary outputs,
+    intermediates, and metadata queues. Model weights and caller activations
+    remain externally owned and are referenced through TensorList pointers.
+    """
 
     packed_expert_outputs: torch.Tensor | None = None
     weighted_expert_outputs: torch.Tensor | None = None
@@ -26,6 +31,20 @@ class ExecutorWorkspace:
     _tensorlist_schedule_host: torch.Tensor | None = None
     _tensorlist_provider_ids: tuple[int, ...] | None = None
     _tensorlist_provider_positions: dict[int, int] | None = None
+    # Persistent tile queue storage.  These are metadata only: all addresses
+    # consumed by a work item remain in TensorList and ultimately refer to
+    # caller/model-owned tensors.
+    persistent_gather_descriptor_indices: torch.Tensor | None = None
+    persistent_gather_tile_m: torch.Tensor | None = None
+    persistent_gather_tile_n: torch.Tensor | None = None
+    persistent_down_descriptor_indices: torch.Tensor | None = None
+    persistent_down_tile_m: torch.Tensor | None = None
+    persistent_down_tile_n: torch.Tensor | None = None
+    persistent_gather_counter: torch.Tensor | None = None
+    persistent_down_counter: torch.Tensor | None = None
+    _persistent_gather_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+    _persistent_down_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+    _persistent_queue_capacity: int = 0
     # The scheduler stores its compact execution description on the device.
     # Keep the last host copy here so repeated decode shapes do not force a
     # device-to-host read before every expert launch.
@@ -195,6 +214,36 @@ class ExecutorWorkspace:
         assert self._tensorlist_provider_positions is not None
         return self._tensorlist_provider_positions
 
+    def ensure_persistent_queue_capacity(self, required: int, *, device: torch.device) -> int:
+        """Reserve reusable device and host SoA storage for persistent tiles.
+
+        Queue entries contain only ``(descriptor_index, tile_m, tile_n)``.
+        Pointer and shape metadata is intentionally not duplicated: the kernel
+        resolves it from TensorList after atomically claiming an entry.
+        """
+
+        needs_allocation = (
+            self.persistent_gather_descriptor_indices is None
+            or self.persistent_gather_descriptor_indices.device != device
+            or required > self._persistent_queue_capacity
+        )
+        if needs_allocation:
+            capacity = max(required, max(1, self._persistent_queue_capacity * 2))
+            def allocate_triplet() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+                return tuple(torch.empty(capacity, dtype=torch.int64, device=device) for _ in range(3))  # type: ignore[return-value]
+            def allocate_host_triplet() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+                return tuple(torch.empty(capacity, dtype=torch.int64, device="cpu", pin_memory=device.type == "cuda") for _ in range(3))  # type: ignore[return-value]
+            gather = allocate_triplet()
+            down = allocate_triplet()
+            self.persistent_gather_descriptor_indices, self.persistent_gather_tile_m, self.persistent_gather_tile_n = gather
+            self.persistent_down_descriptor_indices, self.persistent_down_tile_m, self.persistent_down_tile_n = down
+            self._persistent_gather_host = allocate_host_triplet()
+            self._persistent_down_host = allocate_host_triplet()
+            self.persistent_gather_counter = torch.zeros(1, dtype=torch.int32, device=device)
+            self.persistent_down_counter = torch.zeros(1, dtype=torch.int32, device=device)
+            self._persistent_queue_capacity = capacity
+        return self._persistent_queue_capacity
+
     def get_schedule_rows(
         self,
         expert_queue: torch.Tensor,
@@ -247,6 +296,14 @@ class ExecutorWorkspace:
             self.gathered_activations,
             self.temporary_outputs,
             self.intermediate_activations,
+            self.persistent_gather_descriptor_indices,
+            self.persistent_gather_tile_m,
+            self.persistent_gather_tile_n,
+            self.persistent_down_descriptor_indices,
+            self.persistent_down_tile_m,
+            self.persistent_down_tile_n,
+            self.persistent_gather_counter,
+            self.persistent_down_counter,
         ):
             if tensor is not None:
                 total += tensor.numel() * tensor.element_size()
@@ -255,4 +312,7 @@ class ExecutorWorkspace:
                 total += sum(tensor.numel() * tensor.element_size() for tensor in fields.values())
         if self._tensorlist_schedule_host is not None:
             total += self._tensorlist_schedule_host.numel() * self._tensorlist_schedule_host.element_size()
+        for fields in (self._persistent_gather_host, self._persistent_down_host):
+            if fields is not None:
+                total += sum(tensor.numel() * tensor.element_size() for tensor in fields)
         return total

@@ -227,14 +227,16 @@ gate/up and SwiGLU, then fuse down projection with routing multiplication and
 output writes. CPU or Triton-less execution deliberately uses the reference
 fallback without changing `ExecutorConfig`, plans, or `ExecutorOutput`.
 
-## DWDP Pointer-Array Kernel
+## DWDP Persistent Pointer-Array Kernel
 
-`executor/kernels/dwdp_grouped.py` is a DWDP-specific Triton kernel rather
-than a dense grouped-GEMM adapter. Every program reads independent Qwen gate,
-up, and down addresses from TensorList and therefore needs neither packed
-expert weights nor per-iteration repacking. Tile programs are indexed by the
-active descriptor and tile coordinates; this descriptor layout is intentionally
-the stable input for a future persistent work queue and dynamic scheduling.
+`executor/kernels/persistent.py` is a DWDP-specific persistent Triton engine,
+not a dense grouped-GEMM adapter. Host construction converts TensorList into
+reusable device-resident tile queues without sorting or packing weights. One
+program per SM repeatedly atomically claims a tile, reads independent Qwen
+gate/up/down addresses from TensorList, and claims another tile until empty.
+This is GPU-side work stealing: no expert is statically assigned to a program.
+SwiGLU and dependent down-projection queues are launched on the same stream,
+so stream order provides stage dependency without host synchronization.
 
 without changing Executor API.
 

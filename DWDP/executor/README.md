@@ -198,13 +198,15 @@ experts are omitted. The backend fuses token gather with gate/up GEMMs and
 SwiGLU, then fuses down projection, routing weight, and packed output writes.
 CPU and Triton-less environments report `triton_reference_fallback`.
 
-## DWDP Pointer-Array Kernel
+## DWDP Persistent Pointer-Array Kernel
 
-`kernels/dwdp_grouped.py` is purpose-built for DWDP. It uses TensorList pointer
-arrays to dereference each independently allocated Qwen projection directly;
-there is no packed `[E, O, K]` weight tensor or generic grouped-GEMM wrapper.
-Its tile mapping is deliberately compatible with a future persistent work queue
-and dynamic expert scheduling without changing descriptor layout.
+`kernels/persistent.py` converts each active TensorList descriptor into reusable
+device-resident tile queues. One long-lived Triton program per SM atomically
+claims a tile, resolves its original Qwen pointers through TensorList, and
+claims more work until the queue is empty. The dependent SwiGLU and down stages
+use separate persistent launches on one stream; stream order supplies their
+dependency without host waiting. There is no packed `[E, O, K]` weight tensor,
+generic grouped-GEMM wrapper, or static expert-to-program assignment.
 
 ## Tests and Benchmark
 
