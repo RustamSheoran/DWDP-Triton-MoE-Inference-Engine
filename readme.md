@@ -156,12 +156,3 @@ The next execution backend requires a storage-preserving pointer-array or
 quantization-aware grouped GEMM implementation, validated against the model's
 native kernels. Multi-GPU weight transfers are represented by the native
 communication ABI but are not enabled by the single-GPU Python execution path.
-
-## Contributing
-
-Keep changes scoped to the established architecture. Add correctness coverage,
-run formatting and CPU tests locally, and run CUDA tests plus a before/after
-benchmark on supported hardware for any hot-path modification. Do not add a
-synchronization, allocation, or tensor conversion to an inference loop without
-a measured justification. See [Phase 1](docs/phase1.md) for the contract that
-Phase 2 optimizes.
