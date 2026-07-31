@@ -85,14 +85,17 @@ else
   echo "[WARNING] nvidia-smi not found. Ensure CUDA environment is properly loaded."
 fi
 
-echo "[INFO] Verifying & installing Python dependencies..."
+export HF_HUB_ENABLE_HF_TRANSFER=1
+
+echo "[INFO] Verifying & installing Python dependencies (including hf_transfer for fast downloads)..."
 "${PYTHON_BIN}" -m pip install -q -U \
   'transformers>=4.40,<5' \
   'accelerate>=0.26' \
   'bitsandbytes>=0.43' \
   'safetensors' \
   'triton' \
-  'sentencepiece'
+  'sentencepiece' \
+  'hf_transfer'
 
 # Install DWDP in editable mode
 echo "[INFO] Registering DWDP package in python environment..."
