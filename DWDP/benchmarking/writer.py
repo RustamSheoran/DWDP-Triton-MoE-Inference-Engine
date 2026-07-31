@@ -12,7 +12,7 @@ from .serialization import to_jsonable, write_json
 class BenchmarkReportWriter:
     """Writes benchmark reports and sidecar artifacts to disk."""
 
-    results_root: str | Path = "results"
+    results_root: str | Path = "benchmark-results"
     run_suffix: str | None = None
 
     def create_paths(self, report: BenchmarkReport) -> ExperimentPaths:

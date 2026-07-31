@@ -32,7 +32,7 @@ def slugify(value: str) -> str:
 
 def create_experiment(
     *,
-    results_root: str | Path = "results",
+    results_root: str | Path = "benchmark-results",
     model_name: str,
     backend: str,
     hardware: str | None = None,

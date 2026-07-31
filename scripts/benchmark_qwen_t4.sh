@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 MODEL="Qwen/Qwen1.5-MoE-A2.7B"
-RESULTS_ROOT="${REPO_ROOT}/results/qwen_t4"
+RESULTS_ROOT="${REPO_ROOT}/benchmark-results/qwen_t4"
 LAUNCH_TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
 TEMP_LOG="$(mktemp -t dwdp_qwen_t4.XXXXXX.log)"
 

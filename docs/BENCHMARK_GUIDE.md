@@ -16,7 +16,7 @@ bash scripts/run_all_benchmarks.sh
 1. **Environment & Memory Pre-flight**: Inspects GPU VRAM (`nvidia-smi` / `torch.cuda`) and calculates total memory footprint:
    $$\text{Required VRAM} = \text{Model Parameters Memory} + \text{KV Cache Footprint} + \text{Workspace Buffer (1.5 GB)}$$
    where KV cache footprint is calculated as:
-   $$\text{KV Cache} = 2 \times \text{layers} \times \text{heads} \times \text{head\_dim} \times (\text{seq\_len} + \text{max\_new\_tokens}) \times \text{batch\_size} \times 2\text{ bytes}$$
+   $$\text{KV Cache} = 2 \times \text{layers} \times \text{heads} \times \text{head-dim} \times (\text{seq-len} + \text{max-new-tokens}) \times \text{batch-size} \times 2\text{ bytes}$$
 2. **Dynamic Auto-Precision Selection**:
    - If FP8 fits in VRAM and CUDA capability $\ge 8.9$ (Ada/Hopper) with E4M3 exposed $\rightarrow$ runs **FP8 (E4M3)**.
    - If FP8 exceeds available VRAM or hardware capability $< 8.9$ $\rightarrow$ automatically switches to **4-bit (NF4 / NVFP4)** to guarantee zero Out-Of-Memory (OOM) failures.
@@ -82,12 +82,12 @@ After running `bash scripts/run_all_benchmarks.sh`:
 
 1. **Locate Artifacts**:
    - Main Zip file: `DWDP_FP8_Benchmark_Results_<timestamp>.zip` (in root directory).
-   - Timestamped folder: `results/fp8_run_<timestamp>/`.
+   - Timestamped folder: `benchmark-results/fp8_run_<timestamp>/`.
 2. **Download Artifact**:
    - Download the generated `.zip` file from your cloud/Colab environment to your local machine.
 3. **Commit & Push to Git**:
    ```bash
-   git add results/
+   git add benchmark-results/
    git commit -m "docs: add FP8 benchmark & profiling results for Qwen1.5-MoE"
    git push origin main
    ```

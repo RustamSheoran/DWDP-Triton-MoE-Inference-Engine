@@ -27,7 +27,7 @@ ITERS="${ITERS:-20}"
 PROMPT="${PROMPT:-Explain the architecture of Mixture of Experts in deep learning.}"
 
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-RESULTS_DIR="${REPO_ROOT}/results/fp8_run_${TIMESTAMP}"
+RESULTS_DIR="${REPO_ROOT}/benchmark-results/fp8_run_${TIMESTAMP}"
 ZIP_NAME="DWDP_FP8_Benchmark_Results_${TIMESTAMP}.zip"
 ZIP_PATH="${REPO_ROOT}/${ZIP_NAME}"
 TEMP_LOG="$(mktemp -t dwdp_fp8_bench.XXXXXX.log)"
@@ -155,7 +155,7 @@ echo "[INFO] Packaging benchmark results into ZIP archive..."
 cd -- "${REPO_ROOT}"
 
 if command -v zip >/dev/null 2>&1; then
-  zip -r -q "${ZIP_NAME}" "results/$(basename "${RESULTS_DIR}")"
+  zip -r -q "${ZIP_NAME}" "benchmark-results/$(basename "${RESULTS_DIR}")"
   echo "================================================================="
   echo " SUCCESS: FP8 Benchmark Completed & Packaged!"
   echo "================================================================="

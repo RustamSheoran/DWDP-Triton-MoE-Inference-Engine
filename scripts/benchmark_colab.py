@@ -71,7 +71,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--results-root",
-        default="results",
+        default="benchmark-results",
         help="Directory for timestamped benchmark reports.",
     )
     parser.add_argument(
