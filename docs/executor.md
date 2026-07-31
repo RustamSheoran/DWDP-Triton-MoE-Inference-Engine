@@ -238,16 +238,15 @@ This is GPU-side work stealing: no expert is statically assigned to a program.
 SwiGLU and dependent down-projection queues are launched on the same stream,
 so stream order provides stage dependency without host synchronization.
 
-## Native FP8 Execution
+## Native FP8 Execution & Micro-Scaling
 
-The persistent executor prefers native FP8 on capable CUDA hardware. It
-selects E4M3 when the current PyTorch/Triton installation exposes it, otherwise
-chooses the next supported FP8 dtype. `backend="triton_fp8"` makes FP8 support
-mandatory; `backend="triton"` retains the normal persistent path only where
-native FP8 is unavailable. Expert parameters are converted in place once so
-TensorList retains the same model tensor identities. Activations are quantized
-once per forward into reusable FP8 workspace, and dedicated FP8 kernels use
-FP32 accumulation while retaining FP8 inputs, intermediates, and outputs.
+The persistent executor prefers native FP8 on capable CUDA hardware (Compute Capability 8.9+). It selects E4M3 (`float8_e4m3fn`) when exposed by the PyTorch/Triton stack, with E5M2 as fallback. `backend="triton_fp8"` enforces mandatory native FP8 execution.
+
+Key FP8 architectural features:
+- **In-Place Weight Quantization**: `convert_qwen_weights_to_fp8_once()` converts parameter storage in place while computing per-expert fine-grained scaling maps (`scale_map`), keeping `TensorList` pointer-array layouts unchanged.
+- **Single-Pass Workspace Quantization**: `quantize_activations_once()` quantizes inputs into workspace-allocated FP8 buffers once per forward pass while computing per-token/per-tensor scale factors (`scale_out`).
+- **Micro-Scale Dequantization in Triton Kernels**: Dedicated FP8 kernels (`_persistent_fp8_gather_swiglu` and `_persistent_fp8_down_route_store`) load scaling pointers from `quantization_ptrs`, accumulate dot products in FP32, and apply fine-grained scale factor dequantization before activation functions and output stores.
+
 
 without changing Executor API.
 
