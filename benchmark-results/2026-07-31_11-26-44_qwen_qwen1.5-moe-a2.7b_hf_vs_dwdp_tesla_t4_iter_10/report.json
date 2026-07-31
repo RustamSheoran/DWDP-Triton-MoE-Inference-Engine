@@ -1,0 +1,667 @@
+{
+  "config": {
+    "backend": "hf",
+    "batch_size": 4,
+    "checkpoint": "Qwen/Qwen1.5-MoE-A2.7B",
+    "compare_backend": "dwdp",
+    "compile_mode": null,
+    "device": "cuda",
+    "dtype": "float16_compute",
+    "generation": {
+      "do_sample": false,
+      "max_new_tokens": 128,
+      "temperature": 1.0,
+      "top_k": null,
+      "top_p": null
+    },
+    "model_name": "Qwen/Qwen1.5-MoE-A2.7B",
+    "prompt": "Explain the architecture of Mixture of Experts in deep learning.",
+    "random_seed": 0,
+    "runtime_backend": "dwdp_reference",
+    "runtime_config": {
+      "batch_size": 4,
+      "configured_sequence_length": 128,
+      "device_map": "auto",
+      "profiling_enabled": true,
+      "quantization": "fp8",
+      "random_seed": 0,
+      "timed_iterations": 10,
+      "warmup_iterations": 2
+    },
+    "sampling_config": {},
+    "sequence_length": 128,
+    "torch_compile": false,
+    "workspace_enabled": true
+  },
+  "correctness": {
+    "cosine_similarity": null,
+    "executor_output_parity": null,
+    "generated_token_parity": false,
+    "layer_output_parity": null,
+    "max_absolute_error": null,
+    "mean_absolute_error": null,
+    "merger_output_parity": null,
+    "relative_error": null,
+    "router_output_parity": null,
+    "torch_allclose": null
+  },
+  "environment": {
+    "benchmark_timestamp": "2026-07-31T11:26:44.284923+00:00",
+    "cuda_version": "12.8",
+    "cudnn_version": "91002",
+    "git_branch": "main",
+    "git_commit_hash": "386013369a99472f73a915b14e326295c595bbbf",
+    "gpu_memory_bytes": 15636037632,
+    "gpu_model": "Tesla T4",
+    "hostname": "043106bb5072",
+    "nvidia_driver_version": "580.159.04",
+    "operating_system": "Linux-6.12.90+-x86_64-with-glibc2.35",
+    "precision": "fp8",
+    "python_version": "3.12.13 (main, Mar  4 2026, 09:23:07) [GCC 11.4.0]",
+    "pytorch_version": "2.10.0+cu128",
+    "runtime_backend": "dwdp_reference",
+    "torch_compile": false,
+    "transformers_version": "4.57.6",
+    "triton_version": "3.6.0"
+  },
+  "metadata": {
+    "experiment_name": "colab_hf_vs_dwdp",
+    "future_extensions": {},
+    "notes": [
+      "Native Transformers and DWDP used the same prompt and generation settings.",
+      "DWDP is measured through the current Hugging Face adapter/reference PyTorch path."
+    ],
+    "schema_version": "1.0",
+    "tags": [
+      "colab",
+      "quantized",
+      "fp8"
+    ]
+  },
+  "observations": [
+    "DWDP is 21.44% slower than native Hugging Face by end-to-end latency.",
+    "DWDP throughput is 17.66% lower than native Hugging Face.",
+    "DWDP peak GPU memory is +86.12% versus native Hugging Face.",
+    "Prefill is prompt-only forward latency; TTFT is one-token generation latency; decode is total latency minus TTFT."
+  ],
+  "performance": {
+    "dwdp": {
+      "backend": "dwdp",
+      "decode_latency_ms": 22387.34227729983,
+      "memory": {
+        "average_cpu_memory_bytes": null,
+        "average_gpu_memory_bytes": null,
+        "peak_cpu_memory_bytes": null,
+        "peak_gpu_memory_bytes": 7036295680
+      },
+      "prefill_latency_ms": 1090.4088281999066,
+      "tokens_per_second": 5.4607239529566876,
+      "total_runtime_ms": 23440.115468699878,
+      "ttft_ms": 1052.773191400047
+    },
+    "huggingface": {
+      "backend": "hf",
+      "decode_latency_ms": 18243.527415300014,
+      "memory": {
+        "average_cpu_memory_bytes": null,
+        "average_gpu_memory_bytes": null,
+        "peak_cpu_memory_bytes": null,
+        "peak_gpu_memory_bytes": 3780551680
+      },
+      "prefill_latency_ms": 1126.081575399985,
+      "tokens_per_second": 6.6316581537386545,
+      "total_runtime_ms": 19301.356769700033,
+      "ttft_ms": 1057.829354400019
+    },
+    "runtime_breakdown": {
+      "comms_planner_ms": 0.0,
+      "dispatcher_ms": 0.0,
+      "executor_ms": 0.0,
+      "merger_ms": 0.0,
+      "module_percentages": {
+        "comms_planner": null,
+        "dispatcher": null,
+        "executor": null,
+        "merger": null,
+        "router": null,
+        "scheduler": null
+      },
+      "pipeline_breakdown": {},
+      "router_ms": 0.0,
+      "scheduler_ms": 0.0,
+      "total_dwdp_overhead_ms": null
+    }
+  },
+  "profiler": {
+    "dwdp": {
+      "comms_planner": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "copies": {
+        "cpu_ms": 181.4314499999255,
+        "device_ms": 41.824758999994884,
+        "operators": [
+          "aten::_to_copy",
+          "aten::copy_",
+          "aten::to",
+          "aten::topk"
+        ]
+      },
+      "dispatcher": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "executor": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "gather": {
+        "cpu_ms": 42.92538099999791,
+        "device_ms": 37.23223500000597,
+        "operators": [
+          "aten::index",
+          "aten::index_select"
+        ]
+      },
+      "gemms": {
+        "cpu_ms": 61.96792200000354,
+        "device_ms": 193.897244000001,
+        "operators": [
+          "aten::addmm",
+          "aten::bmm",
+          "aten::matmul",
+          "aten::mm"
+        ]
+      },
+      "merger": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "python_orchestration": {
+        "cpu_ms": 2025.7666380000567,
+        "device_ms": 9395.400655000001,
+        "operators": [
+          "dwdp.python_orchestration"
+        ]
+      },
+      "router": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "scheduler": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "synchronization": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "top_operators": [
+        {
+          "calls": 1,
+          "operator": "dwdp.python_orchestration",
+          "self_cpu_ms": 2025.7666380000567,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 10983,
+          "operator": "bitsandbytes::gemm_4bit",
+          "self_cpu_ms": 664.5799109999689,
+          "self_device_ms": 1114.101268999989
+        },
+        {
+          "calls": 52292,
+          "operator": "cudaLaunchKernel",
+          "self_cpu_ms": 535.7410090000708,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 18084,
+          "operator": "aten::empty",
+          "self_cpu_ms": 166.38720399996498,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 8149,
+          "operator": "cudaMemcpyAsync",
+          "self_cpu_ms": 142.52161900000283,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 8970,
+          "operator": "aten::mul",
+          "self_cpu_ms": 133.21120700002024,
+          "self_device_ms": 72.48414500000742
+        },
+        {
+          "calls": 9402,
+          "operator": "aten::copy_",
+          "self_cpu_ms": 102.76868699996062,
+          "self_device_ms": 33.94184099998996
+        },
+        {
+          "calls": 18205,
+          "operator": "aten::view",
+          "self_cpu_ms": 67.07654799998889,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 4438,
+          "operator": "aten::add",
+          "self_cpu_ms": 64.94169999998019,
+          "self_device_ms": 18.77480899999729
+        },
+        {
+          "calls": 2893,
+          "operator": "aten::silu",
+          "self_cpu_ms": 54.875771999995514,
+          "self_device_ms": 14.661618999996062
+        },
+        {
+          "calls": 1246,
+          "operator": "aten::mm",
+          "self_cpu_ms": 52.62262599999732,
+          "self_device_ms": 175.61900800000004
+        },
+        {
+          "calls": 57880,
+          "operator": "aten::to",
+          "self_cpu_ms": 49.28063099999155,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 6218,
+          "operator": "aten::empty_strided",
+          "self_cpu_ms": 47.73390899999465,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 25432,
+          "operator": "aten::slice",
+          "self_cpu_ms": 47.22815599999842,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 3126,
+          "operator": "cudaStreamSynchronize",
+          "self_cpu_ms": 45.64750700000762,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 4061,
+          "operator": "aten::index_select",
+          "self_cpu_ms": 42.466731999997705,
+          "self_device_ms": 37.13900600000569
+        },
+        {
+          "calls": 2736,
+          "operator": "aten::cat",
+          "self_cpu_ms": 41.91197899998406,
+          "self_device_ms": 28.08316900000725
+        },
+        {
+          "calls": 40941,
+          "operator": "aten::as_strided",
+          "self_cpu_ms": 35.260386000026166,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 4900,
+          "operator": "aten::_to_copy",
+          "self_cpu_ms": 21.87688099997592,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 1536,
+          "operator": "aten::scatter_",
+          "self_cpu_ms": 19.47527300000482,
+          "self_device_ms": 7.375752999993809
+        },
+        {
+          "calls": 384,
+          "operator": "aten::nonzero",
+          "self_cpu_ms": 18.269296999990978,
+          "self_device_ms": 4.657898999995798
+        },
+        {
+          "calls": 784,
+          "operator": "aten::pow",
+          "self_cpu_ms": 14.906455000008785,
+          "self_device_ms": 3.9163400000057456
+        },
+        {
+          "calls": 784,
+          "operator": "aten::mean",
+          "self_cpu_ms": 14.57993499999465,
+          "self_device_ms": 8.813431999992625
+        },
+        {
+          "calls": 401,
+          "operator": "aten::cumsum",
+          "self_cpu_ms": 13.149072999997713,
+          "self_device_ms": 2.8865680000002487
+        },
+        {
+          "calls": 1952,
+          "operator": "aten::arange",
+          "self_cpu_ms": 13.020645000007589,
+          "self_device_ms": 2.79985399999152
+        },
+        {
+          "calls": 768,
+          "operator": "aten::min",
+          "self_cpu_ms": 12.07486899998077,
+          "self_device_ms": 6.336282999998563
+        },
+        {
+          "calls": 784,
+          "operator": "aten::max",
+          "self_cpu_ms": 11.350406999981825,
+          "self_device_ms": 6.654858999995562
+        },
+        {
+          "calls": 768,
+          "operator": "aten::neg",
+          "self_cpu_ms": 10.246937999999158,
+          "self_device_ms": 4.629836999992616
+        },
+        {
+          "calls": 384,
+          "operator": "aten::bincount",
+          "self_cpu_ms": 9.997822000013224,
+          "self_device_ms": 2.600023999995596
+        },
+        {
+          "calls": 7,
+          "operator": "Activity Buffer Request",
+          "self_cpu_ms": 9.979718000000807,
+          "self_device_ms": 0.11986999999987893
+        }
+      ]
+    },
+    "dwdp_load_time_ms": 188197.14237099834,
+    "dwdp_output": "The Mixture of Experts (MoE) architecture is a type of neural network architecture that is used for decision-making tasks. It is a type of ensemble learning, where multiple models are combined to make a final decision. In the MoE architecture, each expert model is trained to make a specific decision, and the final decision is made by combining the outputs of all the expert models. The MoE architecture is often used in applications where the decision-making process is complex and requires multiple levels of expertise to make a final decision. The MoE architecture is also used in applications where the decision-making process is dynamic and requires the ability to adapt to",
+    "hf": {
+      "comms_planner": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "copies": {
+        "cpu_ms": 156.07327899995084,
+        "device_ms": 43.849333000016614,
+        "operators": [
+          "aten::_to_copy",
+          "aten::copy_",
+          "aten::to",
+          "aten::topk"
+        ]
+      },
+      "dispatcher": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "executor": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "gather": {
+        "cpu_ms": 220.45638599999177,
+        "device_ms": 95.49610199998311,
+        "operators": [
+          "aten::index",
+          "aten::index_add_",
+          "aten::index_select"
+        ]
+      },
+      "gemms": {
+        "cpu_ms": 63.710520000001374,
+        "device_ms": 205.8552570000015,
+        "operators": [
+          "aten::addmm",
+          "aten::bmm",
+          "aten::matmul",
+          "aten::mm"
+        ]
+      },
+      "merger": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "python_orchestration": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "router": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "scheduler": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "synchronization": {
+        "cpu_ms": 0.0,
+        "device_ms": 0.0,
+        "operators": []
+      },
+      "top_operators": [
+        {
+          "calls": 10983,
+          "operator": "bitsandbytes::gemm_4bit",
+          "self_cpu_ms": 709.5091609999379,
+          "self_device_ms": 1161.55901599999
+        },
+        {
+          "calls": 64300,
+          "operator": "cudaLaunchKernel",
+          "self_cpu_ms": 635.0845660001322,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 7542,
+          "operator": "aten::index",
+          "self_cpu_ms": 182.301564999975,
+          "self_device_ms": 50.27866499998362
+        },
+        {
+          "calls": 16369,
+          "operator": "aten::empty",
+          "self_cpu_ms": 178.6327919999883,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 2893,
+          "operator": "aten::nonzero",
+          "self_cpu_ms": 141.86733799994425,
+          "self_device_ms": 60.586687999986545
+        },
+        {
+          "calls": 8970,
+          "operator": "aten::mul",
+          "self_cpu_ms": 140.6900889999695,
+          "self_device_ms": 55.72678599998946
+        },
+        {
+          "calls": 5456,
+          "operator": "cudaStreamSynchronize",
+          "self_cpu_ms": 89.04371599998494,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 6090,
+          "operator": "aten::copy_",
+          "self_cpu_ms": 81.8783719999789,
+          "self_device_ms": 30.52268000002569
+        },
+        {
+          "calls": 6578,
+          "operator": "cudaMemcpyAsync",
+          "self_cpu_ms": 81.17324700005743,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 26112,
+          "operator": "aten::view",
+          "self_cpu_ms": 75.81469099995374,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 4054,
+          "operator": "aten::add",
+          "self_cpu_ms": 62.97174399995359,
+          "self_device_ms": 18.259634999990194
+        },
+        {
+          "calls": 2893,
+          "operator": "aten::silu",
+          "self_cpu_ms": 57.04979199998183,
+          "self_device_ms": 15.29597100001863
+        },
+        {
+          "calls": 1246,
+          "operator": "aten::mm",
+          "self_cpu_ms": 54.30125900000234,
+          "self_device_ms": 185.93362000000042
+        },
+        {
+          "calls": 58085,
+          "operator": "aten::to",
+          "self_cpu_ms": 47.358966000008586,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 4442,
+          "operator": "aten::empty_strided",
+          "self_cpu_ms": 46.49069400000165,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 2509,
+          "operator": "aten::index_add_",
+          "self_cpu_ms": 37.79471800001465,
+          "self_device_ms": 45.10041499999984
+        },
+        {
+          "calls": 35169,
+          "operator": "aten::as_strided",
+          "self_cpu_ms": 33.53151599997942,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 9,
+          "operator": "Activity Buffer Request",
+          "self_cpu_ms": 30.457864999999703,
+          "self_device_ms": 0.018304000000351154
+        },
+        {
+          "calls": 1584,
+          "operator": "aten::cat",
+          "self_cpu_ms": 24.03703799999519,
+          "self_device_ms": 24.093871999995443
+        },
+        {
+          "calls": 2560,
+          "operator": "aten::_local_scalar_dense",
+          "self_cpu_ms": 21.94640399998966,
+          "self_device_ms": 4.379188000019164
+        },
+        {
+          "calls": 13048,
+          "operator": "aten::reshape",
+          "self_cpu_ms": 18.9339779999821,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 7299,
+          "operator": "aten::transpose",
+          "self_cpu_ms": 17.57318299997832,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 784,
+          "operator": "aten::pow",
+          "self_cpu_ms": 16.143067999996415,
+          "self_device_ms": 3.967365999997328
+        },
+        {
+          "calls": 3124,
+          "operator": "aten::_to_copy",
+          "self_cpu_ms": 15.748290999969006,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 784,
+          "operator": "aten::mean",
+          "self_cpu_ms": 15.681079000003422,
+          "self_device_ms": 8.98931299999132
+        },
+        {
+          "calls": 7576,
+          "operator": "aten::select",
+          "self_cpu_ms": 14.762537000018103,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 2925,
+          "operator": "aten::resize_",
+          "self_cpu_ms": 14.113269999996668,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 6315,
+          "operator": "aten::unsqueeze",
+          "self_cpu_ms": 13.61689800001283,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 2597,
+          "operator": "aten::clone",
+          "self_cpu_ms": 13.118662999983393,
+          "self_device_ms": 0.0
+        },
+        {
+          "calls": 2893,
+          "operator": "aten::set_",
+          "self_cpu_ms": 12.027254000000813,
+          "self_device_ms": 0.0
+        }
+      ]
+    },
+    "hf_load_time_ms": 194932.26703800063,
+    "hf_output": "The Mixture of Experts (MoE) architecture is a type of neural network architecture that is used for decision-making tasks. It is a combination of multiple experts, each of which is responsible for a specific part of the decision-making process. The experts are trained separately and then combined to make a final decision. The MoE architecture is often used in applications such as natural language processing and speech recognition. It is a powerful tool for decision-making tasks because it can handle complex decision-making processes and can be trained to make decisions based on a wide range of data. The MoE architecture is a powerful tool for decision-making tasks because it can handle",
+    "torch_profiler_enabled": true
+  },
+  "runtime_statistics": {
+    "active_experts": null,
+    "communication_planner_statistics": {},
+    "dispatcher_statistics": {},
+    "executor_statistics": {},
+    "future_extensions": {
+      "dwdp_load_time_ms": 188197.14237099834,
+      "generated_tokens": 128,
+      "hf_load_time_ms": 194932.26703800063,
+      "input_tokens": 128
+    },
+    "merger_statistics": {},
+    "num_experts": null,
+    "routing_distribution": {},
+    "scheduler_statistics": {},
+    "workspace_allocations": {},
+    "workspace_reuse": {}
+  }
+}
