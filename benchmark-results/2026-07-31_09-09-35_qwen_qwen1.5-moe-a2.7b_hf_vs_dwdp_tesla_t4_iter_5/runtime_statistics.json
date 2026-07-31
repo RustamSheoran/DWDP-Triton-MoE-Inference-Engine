@@ -1,0 +1,18 @@
+{
+  "active_experts": null,
+  "communication_planner_statistics": {},
+  "dispatcher_statistics": {},
+  "executor_statistics": {},
+  "future_extensions": {
+    "dwdp_load_time_ms": 173372.95709,
+    "generated_tokens": 128,
+    "hf_load_time_ms": 324348.5855370001,
+    "input_tokens": 128
+  },
+  "merger_statistics": {},
+  "num_experts": null,
+  "routing_distribution": {},
+  "scheduler_statistics": {},
+  "workspace_allocations": {},
+  "workspace_reuse": {}
+}
