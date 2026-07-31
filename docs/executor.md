@@ -238,6 +238,16 @@ This is GPU-side work stealing: no expert is statically assigned to a program.
 SwiGLU and dependent down-projection queues are launched on the same stream,
 so stream order provides stage dependency without host synchronization.
 
+## Single-Launch Fused MoE Grouped-GEMM Kernel
+
+[kernels/fused_moe.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fused_moe.py) provides a single-launch fused MoE Triton kernel (`fused_moe`). 
+
+Key Architectural Highlights:
+- **Unified Kernel Launch**: Combines token routing gather, Gate+Up projection GEMM, SwiGLU activation ($\text{gate} \times \text{sigmoid}(\text{gate}) \times \text{up}$), Down projection GEMM, and routing-weight scaling in a single `@triton.jit` kernel launch.
+- **Kernel Launch Overhead Reduction**: Eliminates PyTorch's sequential per-expert Python loop overhead, reducing 24+ CUDA kernel launches per MoE layer down to 1 single launch.
+- **SRAM Activation Retention**: Intermediate Gate/Up activations and SwiGLU outputs are computed directly inside GPU SRAM (L1/L2 cache), preventing redundant roundtrips to main VRAM.
+- **Dynamic Work Partitioning**: Maps 2D program grids `(cdiv(tokens * top_k, BLOCK_SIZE_M), num_experts)` to achieve balanced Streaming Multiprocessor (SM) occupancy across non-uniform expert routing distributions.
+
 ## Native FP8 Execution & Micro-Scaling
 
 The persistent executor prefers native FP8 on capable CUDA hardware (Compute Capability 8.9+). It selects E4M3 (`float8_e4m3fn`) when exposed by the PyTorch/Triton stack, with E5M2 as fallback. `backend="triton_fp8"` enforces mandatory native FP8 execution.
