@@ -124,8 +124,8 @@ def check_vram_and_select_precision(
     if not torch.cuda.is_available():
         return "fp16", "CUDA unavailable, running CPU FP16."
 
-    device_props = torch.cuda.get_device_properties(0)
-    vram_bytes = device_props.total_memory
+    num_gpus = torch.cuda.device_count()
+    vram_bytes = sum(torch.cuda.get_device_properties(i).total_memory for i in range(num_gpus))
     vram_gb = vram_bytes / (1024**3)
     capability = torch.cuda.get_device_capability(0)
     has_e4m3 = hasattr(torch, "float8_e4m3fn")
