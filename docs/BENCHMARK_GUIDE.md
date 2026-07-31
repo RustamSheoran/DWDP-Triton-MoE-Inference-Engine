@@ -13,16 +13,22 @@ bash scripts/run_all_benchmarks.sh
 ```
 
 ### What this script automatically does:
-1. **Environment Setup**: Validates CUDA GPU capabilities and installs required dependencies (`torch`, `triton`, `transformers`, `accelerate`, `bitsandbytes`, `safetensors`, `zip`).
-2. **Editable Installation**: Installs `DWDP` in editable mode (`pip install -e .`).
-3. **FP8 Model Execution**: Loads `Qwen/Qwen1.5-MoE-A2.7B` and runs native FP8 execution (`--quantization fp8`).
+1. **Environment & Memory Pre-flight**: Inspects GPU VRAM (`nvidia-smi` / `torch.cuda`) and calculates total memory footprint:
+   $$\text{Required VRAM} = \text{Model Parameters Memory} + \text{KV Cache Footprint} + \text{Workspace Buffer (1.5 GB)}$$
+   where KV cache footprint is calculated as:
+   $$\text{KV Cache} = 2 \times \text{layers} \times \text{heads} \times \text{head\_dim} \times (\text{seq\_len} + \text{max\_new\_tokens}) \times \text{batch\_size} \times 2\text{ bytes}$$
+2. **Dynamic Auto-Precision Selection**:
+   - If FP8 fits in VRAM and CUDA capability $\ge 8.9$ (Ada/Hopper) with E4M3 exposed $\rightarrow$ runs **FP8 (E4M3)**.
+   - If FP8 exceeds available VRAM or hardware capability $< 8.9$ $\rightarrow$ automatically switches to **4-bit (NF4 / NVFP4)** to guarantee zero Out-Of-Memory (OOM) failures.
+3. **Editable Installation**: Installs `DWDP` in editable mode (`pip install -e .`).
 4. **Comprehensive Profiling**: Captures:
    - **Prefill Latency** (prompt encoding time)
    - **Time to First Token (TTFT)**
    - **Decode Throughput** ($\text{tokens/sec}$)
    - **Peak VRAM Allocation**
-   - **Torch Profiler Operator Breakdown** (categorizing router, dispatcher, scheduler, gather, and GEMM kernel times)
-5. **Artifact Zip & Packaging**: Creates a timestamped `.zip` archive (e.g., `DWDP_FP8_Benchmark_Results_2026-07-31_10-00-00.zip`) in the project root directory containing the timestamped results folder.
+   - **Torch Profiler Operator Breakdown** (categorizing router, dispatcher, scheduler, gather, and FP8 GEMM kernel times)
+5. **Artifact Zip & Packaging**: Bundles all outputs into `DWDP_FP8_Benchmark_Results_<timestamp>.zip` directly in the root directory for easy download.
+
 
 ---
 

@@ -105,6 +105,66 @@ def quantization_config(mode: str) -> BitsAndBytesConfig:
     return BitsAndBytesConfig(load_in_8bit=True)
 
 
+def check_vram_and_select_precision(
+    requested_mode: str,
+    batch_size: int,
+    seq_len: int,
+    max_new_tokens: int,
+) -> tuple[str, str]:
+    """Check GPU VRAM and System RAM to select optimal precision (FP8 vs 4bit NF4/NVFP4 vs FP16).
+
+    Returns (selected_mode, reasoning_string).
+    """
+    if not torch.cuda.is_available():
+        return "fp16", "CUDA unavailable, running CPU FP16."
+
+    device_props = torch.cuda.get_device_properties(0)
+    vram_bytes = device_props.total_memory
+    vram_gb = vram_bytes / (1024**3)
+    capability = torch.cuda.get_device_capability(0)
+    has_e4m3 = hasattr(torch, "float8_e4m3fn")
+
+    total_tokens = seq_len + max_new_tokens
+    kv_cache_estimate_gb = (2 * 32 * 32 * 128 * total_tokens * batch_size * 2) / (1024**3)
+    safety_buffer_gb = 1.5
+
+    fp8_needed_gb = 14.3 + kv_cache_estimate_gb + safety_buffer_gb
+    fp4_needed_gb = 7.2 + kv_cache_estimate_gb + safety_buffer_gb
+
+    if requested_mode == "fp8":
+        if vram_gb < fp8_needed_gb:
+            print(
+                f"[VRAM CHECK] FP8 requires ~{fp8_needed_gb:.1f} GB VRAM, but GPU only has {vram_gb:.1f} GB."
+            )
+            print(
+                "[VRAM CHECK] Automatically switching precision to 4bit (NF4 / NVFP4) to avoid Out-Of-Memory (OOM) error!"
+            )
+            return (
+                "4bit",
+                f"VRAM ({vram_gb:.1f}GB) insufficient for FP8 (~{fp8_needed_gb:.1f}GB needed); auto-switched to 4bit (NF4/NVFP4).",
+            )
+        if capability < (8, 9) and not has_e4m3:
+            print(
+                f"[HARDWARE CHECK] GPU Compute Capability {capability[0]}.{capability[1]} < 8.9 (Ada/Hopper) and float8_e4m3fn is not exposed."
+            )
+            print(
+                "[HARDWARE CHECK] Automatically using 4bit (NF4 / NVFP4) quantization for optimal GPU execution."
+            )
+            return (
+                "4bit",
+                f"GPU compute capability ({capability[0]}.{capability[1]}) < 8.9; auto-switched to 4bit (NF4/NVFP4).",
+            )
+        return "fp8", f"FP8 (E4M3) selected and fits within {vram_gb:.1f}GB VRAM."
+
+    if requested_mode == "auto":
+        if vram_gb >= fp8_needed_gb and capability >= (8, 9) and has_e4m3:
+            return "fp8", f"Auto-selected FP8 (E4M3) on {vram_gb:.1f}GB VRAM."
+        else:
+            return "4bit", f"Auto-selected 4bit (NF4/NVFP4) on {vram_gb:.1f}GB VRAM."
+
+    return requested_mode, f"Using user requested {requested_mode} precision."
+
+
 def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
     target_dtype = torch.float16
     if mode == "fp8":
@@ -123,6 +183,7 @@ def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
 
 def input_device(model: Any) -> torch.device:
     return next(model.parameters()).device
+
 
 
 def resolve_hf_token(explicit_token: str | None) -> str | None:

@@ -88,19 +88,35 @@ if ! command -v zip >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 2: Validate PyTorch & CUDA Capabilities
+# Step 2: Validate PyTorch, VRAM Capacity, & Hardware Capabilities
 # ------------------------------------------------------------------------------
-echo "[INFO] Validating PyTorch & CUDA installation..."
+echo "[INFO] Validating PyTorch, VRAM Capacity, & Hardware Capabilities..."
 "${PYTHON_BIN}" - <<'PY'
 import torch
 
 print(f"PyTorch Version: {torch.__version__}")
 print(f"CUDA Available:  {torch.cuda.is_available()}")
 if torch.cuda.is_available():
-    print(f"Device Name:     {torch.cuda.get_device_name(0)}")
-    print(f"CUDA Capability: {torch.cuda.get_device_capability(0)}")
-    fp8_support = hasattr(torch, "float8_e4m3fn")
-    print(f"Native FP8 Dtype exposed: {fp8_support}")
+    props = torch.cuda.get_device_properties(0)
+    vram_gb = props.total_memory / (1024 ** 3)
+    capability = torch.cuda.get_device_capability(0)
+    has_e4m3 = hasattr(torch, "float8_e4m3fn")
+    
+    print(f"GPU Name:        {torch.cuda.get_device_name(0)}")
+    print(f"Total VRAM:      {vram_gb:.2f} GB")
+    print(f"CUDA Capability: {capability[0]}.{capability[1]}")
+    print(f"Native FP8 (E4M3) Exposed: {has_e4m3}")
+    
+    # Calculate estimated requirements for model weights + KV cache + CUDA overhead
+    model_fp8_est_gb = 14.3
+    kv_cache_est_gb = (2 * 32 * 32 * 128 * 256 * 1 * 2) / (1024 ** 3) # ~0.13 GB
+    total_req_gb = model_fp8_est_gb + kv_cache_est_gb + 1.5
+    
+    print(f"[VRAM ESTIMATOR] Estimated FP8 requirements (Model + KV Cache + Workspace): ~{total_req_gb:.2f} GB")
+    if vram_gb >= total_req_gb and capability >= (8, 9) and has_e4m3:
+        print("[PRECISION SELECTION] FP8 (E4M3) execution fully supported and fits within VRAM.")
+    else:
+        print(f"[PRECISION SELECTION] VRAM ({vram_gb:.1f}GB) or Hardware Capability ({capability[0]}.{capability[1]}) is below FP8 threshold. Auto-fallback to 4bit (NF4/NVFP4) enabled.")
 PY
 
 # ------------------------------------------------------------------------------
