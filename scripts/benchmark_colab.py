@@ -149,9 +149,9 @@ def check_vram_and_select_precision(
                 "4bit",
                 f"VRAM ({vram_gb:.1f}GB) insufficient for FP8 (~{fp8_needed_gb:.1f}GB needed); auto-switched to 4bit (NF4/NVFP4).",
             )
-        if capability < (8, 9) and not has_e4m3:
+        if capability < (8, 9):
             print(
-                f"[HARDWARE CHECK] GPU Compute Capability {capability[0]}.{capability[1]} < 8.9 (Ada/Hopper) and float8_e4m3fn is not exposed."
+                f"[HARDWARE CHECK] GPU Compute Capability {capability[0]}.{capability[1]} < 8.9 (Ada/Hopper)."
             )
             print(
                 "[HARDWARE CHECK] Automatically using 4bit (NF4 / NVFP4) quantization for optimal GPU execution."
