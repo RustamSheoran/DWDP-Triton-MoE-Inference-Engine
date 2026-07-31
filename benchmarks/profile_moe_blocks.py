@@ -15,18 +15,23 @@ import argparse
 import json
 import statistics
 import time
+import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-import torch
-from transformers import AutoModelForCausalLM
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.adapters.extractor import discover_qwen_moe_layers
-from DWDP.adapters.qwen15_moe import DWDPMoEBlock
-from DWDP.benchmarking.environment import collect_environment_metadata
-from DWDP.runtime import RuntimeConfig
+import torch  # noqa: E402
+from transformers import AutoModelForCausalLM  # noqa: E402
+
+from DWDP.adapters.extractor import discover_qwen_moe_layers  # noqa: E402
+from DWDP.adapters.qwen15_moe import DWDPMoEBlock  # noqa: E402
+from DWDP.benchmarking.environment import collect_environment_metadata  # noqa: E402
+from DWDP.runtime import RuntimeConfig  # noqa: E402
 
 
 DWDP_STAGE_NAMES = (

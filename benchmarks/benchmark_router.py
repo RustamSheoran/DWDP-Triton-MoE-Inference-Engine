@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
 
-import torch
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.router import LinearTopKRouter, RouterConfig
+import torch  # noqa: E402
+
+from DWDP.router import LinearTopKRouter, RouterConfig  # noqa: E402
 
 
 def parse_dtype(name: str) -> torch.dtype:

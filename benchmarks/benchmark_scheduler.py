@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
 
-import torch
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments
-from DWDP.scheduler import RoundRobinScheduler, SchedulerConfig, SchedulerWorkspace
-from DWDP.scheduler.utils import estimate_tensor_bytes
+import torch  # noqa: E402
+
+from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
+from DWDP.scheduler import RoundRobinScheduler, SchedulerConfig, SchedulerWorkspace  # noqa: E402
+from DWDP.scheduler.utils import estimate_tensor_bytes  # noqa: E402
 
 
 def synchronize(device: str) -> None:

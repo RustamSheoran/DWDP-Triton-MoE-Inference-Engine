@@ -12,6 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 # ------------------------------------------------------------------------------
@@ -92,11 +93,9 @@ echo "[INFO] Verifying & installing Python dependencies..."
   'triton' \
   'sentencepiece'
 
-# Install DWDP in editable mode if not already registered
-if ! "${PYTHON_BIN}" -c "import DWDP" >/dev/null 2>&1; then
-  echo "[INFO] Installing DWDP package in editable mode..."
-  "${PYTHON_BIN}" -m pip install -q -e "${REPO_ROOT}"
-fi
+# Install DWDP in editable mode
+echo "[INFO] Registering DWDP package in python environment..."
+"${PYTHON_BIN}" -m pip install -q -e "${REPO_ROOT}" || true
 
 # Ensure zip tool is available
 if ! command -v zip >/dev/null 2>&1; then

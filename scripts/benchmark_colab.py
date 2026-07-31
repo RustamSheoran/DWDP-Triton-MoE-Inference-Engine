@@ -12,13 +12,19 @@ import gc
 import json
 import os
 import time
+import sys
 from pathlib import Path
 from typing import Any
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+# Ensure repository root is in sys.path so 'import DWDP' works out-of-the-box
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.benchmarking import (
+import torch  # noqa: E402
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig  # noqa: E402
+
+from DWDP.benchmarking import (  # noqa: E402
     BackendPerformance,
     BenchmarkConfig,
     BenchmarkReport,
@@ -31,8 +37,8 @@ from DWDP.benchmarking import (
     RuntimeBreakdown,
     RuntimeStatistics,
 )
-from DWDP.benchmarking.environment import collect_environment_metadata
-from DWDP.runtime import DWDPRuntime, RuntimeConfig
+from DWDP.benchmarking.environment import collect_environment_metadata  # noqa: E402
+from DWDP.runtime import DWDPRuntime, RuntimeConfig  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

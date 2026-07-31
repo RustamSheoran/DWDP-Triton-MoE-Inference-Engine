@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
 
-import torch
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.dispatcher import DispatchWorkspace, DispatcherConfig, ExpertMajorDispatcher
-from DWDP.dispatcher.ops import (
+import torch  # noqa: E402
+
+from DWDP.dispatcher import DispatchWorkspace, DispatcherConfig, ExpertMajorDispatcher  # noqa: E402
+from DWDP.dispatcher.ops import (  # noqa: E402
     compute_destination_positions,
     compute_expert_histogram,
     exclusive_cumsum,
@@ -15,8 +21,8 @@ from DWDP.dispatcher.ops import (
     pack_token_indices,
     stable_expert_permutation,
 )
-from DWDP.dispatcher.utils import estimate_tensor_bytes
-from DWDP.router import RouterOutput
+from DWDP.dispatcher.utils import estimate_tensor_bytes  # noqa: E402
+from DWDP.router import RouterOutput  # noqa: E402
 
 
 def synchronize(device: str) -> None:

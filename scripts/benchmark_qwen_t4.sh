@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 MODEL="Qwen/Qwen1.5-MoE-A2.7B"
 RESULTS_ROOT="${REPO_ROOT}/benchmark-results/qwen_t4"

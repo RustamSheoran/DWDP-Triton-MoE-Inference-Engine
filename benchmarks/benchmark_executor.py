@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
 
-import torch
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from DWDP.comms_planner import (
+import torch  # noqa: E402
+
+from DWDP.comms_planner import (  # noqa: E402
     CommunicationCostModel,
     CommunicationGraph,
     CommunicationPlan,
@@ -16,11 +22,11 @@ from DWDP.comms_planner import (
     SynchronizationMetadata as CommunicationSynchronizationMetadata,
     TopologyMetadata,
 )
-from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments
-from DWDP.executor import ExecutorConfig, ExecutorWorkspace, PyTorchExecutor
-from DWDP.executor.experts import ExpertRegistry
-from DWDP.executor.utils import estimate_tensor_bytes
-from DWDP.scheduler import (
+from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
+from DWDP.executor import ExecutorConfig, ExecutorWorkspace, PyTorchExecutor  # noqa: E402
+from DWDP.executor.experts import ExpertRegistry  # noqa: E402
+from DWDP.executor.utils import estimate_tensor_bytes  # noqa: E402
+from DWDP.scheduler import (  # noqa: E402
     DependencyMetadata as SchedulerDependencyMetadata,
     ExecutionPlan,
     SchedulerStatistics,
