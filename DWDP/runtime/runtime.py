@@ -17,6 +17,8 @@ from DWDP.scheduler import SchedulerConfig, SchedulerMetadataLevel, build_schedu
 from .config import RuntimeConfig
 from .context import RuntimeContext
 from .correctness import CorrectnessReport, compare_tensors
+from .cuda_graph import CUDAGraphRunner
+from .paged_attention import PagedKVCacheManager
 from .pipeline import RuntimePipelineOutput
 from .profiler import RuntimeProfiler
 from .registry import register_runtime
@@ -47,6 +49,8 @@ class DWDPRuntime(nn.Module):
         self.merger = merger
         self.adapter = adapter
         self.context = RuntimeContext.from_config(self.config)
+        self.graph_runner = CUDAGraphRunner(self)
+        self.paged_kv_manager = PagedKVCacheManager(num_blocks=1024) if torch.cuda.is_available() else None
 
     @classmethod
     def build_reference(
