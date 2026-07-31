@@ -37,7 +37,7 @@ class _HFProjectionRouter(LinearTopKRouter):
 class DWDPMoEBlock(nn.Module):
     """Hugging Face MoE block replacement backed by the DWDP pipeline."""
 
-    def __init__(self, spec: MoELayerSpec, config: RuntimeConfig) -> None:
+    def __init__(self, spec: MoELayerSpec, config: RuntimeConfig, *, context: RuntimeContext | None = None) -> None:
         super().__init__()
         self.layer_name = spec.name
         self.hidden_size = spec.hidden_size
@@ -68,7 +68,11 @@ class DWDPMoEBlock(nn.Module):
 
         self.shared_expert = getattr(spec.module, "shared_expert", None)
         self.shared_expert_gate = getattr(spec.module, "shared_expert_gate", None)
-        self.context = RuntimeContext.from_config(config)
+        self.context = context if context is not None else RuntimeContext.from_config(config)
+
+        self._shared_stream: torch.cuda.Stream | None = None
+        if self.shared_expert is not None and torch.cuda.is_available():
+            self._shared_stream = torch.cuda.Stream()
 
         self.dispatcher = build_dispatcher(
             DispatcherConfig(
@@ -129,9 +133,8 @@ class DWDPMoEBlock(nn.Module):
         workspaces = self.context.workspaces
         # Stream-Overlapped Shared Expert Execution
         shared_output = None
-        if self.shared_expert is not None and torch.cuda.is_available():
-            if not hasattr(self, "_shared_stream"):
-                self._shared_stream = torch.cuda.Stream()
+        if self.shared_expert is not None and self._shared_stream is not None:
+            self._shared_stream.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(self._shared_stream):
                 shared_output = self.shared_expert(hidden_states)
                 if self.shared_expert_gate is not None:
@@ -200,7 +203,7 @@ class DWDPMoEBlock(nn.Module):
         output = merger_output.hidden_states
 
         if shared_output is not None:
-            if hasattr(self, "_shared_stream") and torch.cuda.is_available():
+            if self._shared_stream is not None:
                 torch.cuda.current_stream().wait_stream(self._shared_stream)
             output = output + shared_output
 
@@ -253,8 +256,9 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
             raise ValueError("no supported Qwen MoE layers were discovered")
         self._patcher = ModulePatcher()
         self.moe_layer_specs = specs
+        shared_context = RuntimeContext.from_config(self.config)
         for spec in specs:
-            replacement = DWDPMoEBlock(spec, self.config)
+            replacement = DWDPMoEBlock(spec, self.config, context=shared_context)
             self._patcher.replace(
                 name=spec.name,
                 parent=spec.parent,

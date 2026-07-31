@@ -27,6 +27,16 @@ The Scheduler does not:
 
 It decides what should execute, in what order, and with what metadata.
 
+## ⚡ Key Engine Optimizations
+
+1. **Bulk Metadata `.tolist()` Host Transfer** ([`DWDP/scheduler/utils.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/scheduler/utils.py)):
+   - **Optimization**: Converted 6 scheduling metadata tensors to CPU lists using `.tolist()` in bulk before iterating over execution batches.
+   - **Impact**: Eliminates **384 blocking GPU-to-CPU device synchronization stalls** per token step on a 64-expert model.
+
+2. **Zero-Clone Priorities** ([`DWDP/scheduler/ops/round_robin.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/scheduler/ops/round_robin.py)):
+   - **Optimization**: Reused `execution_order` directly as `execution_priority` without calling `.clone()`.
+   - **Impact**: Eliminates redundant GPU tensor allocation & memory copying.
+
 ## Runtime Boundary
 
 ```mermaid

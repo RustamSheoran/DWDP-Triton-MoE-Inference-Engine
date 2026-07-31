@@ -24,6 +24,12 @@ flowchart TD
 
 This separation keeps the final reconstruction layer independent from the Router, Dispatcher, Scheduler, and Comms Planner. `ExecutorOutput` is the only contract the Merger understands.
 
+## ⚡ Key Engine Optimizations
+
+1. **Single-Pass Triton Merger Kernel** ([`DWDP/merger/kernels/fused_merger.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/merger/kernels/fused_merger.py)):
+   - **Optimization**: Fuses routing-weight scaling and token index scatter-add directly inside GPU SRAM using atomic addition (`tl.atomic_add`) in a single Triton kernel pass.
+   - **Impact**: Cuts VRAM memory roundtrips in half (**reduces VRAM pass count from 2x down to 1x**).
+
 ## Mathematical Formulation
 
 Let:

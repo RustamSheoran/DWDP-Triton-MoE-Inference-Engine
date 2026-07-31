@@ -511,7 +511,12 @@ def main() -> None:
     dwdp_backend = "triton" if torch.cuda.is_available() else "dwdp"
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
-        config=RuntimeConfig(backend=dwdp_backend, device="cuda", dtype=torch.float16),
+        config=RuntimeConfig(
+            backend=dwdp_backend,
+            device="cuda",
+            dtype=torch.float16,
+            enable_profiling=args.profile,
+        ),
         **load_kwargs(active_quant, token),
     )
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3

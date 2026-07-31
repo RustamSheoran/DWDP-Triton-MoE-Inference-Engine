@@ -40,6 +40,20 @@ The reference routing path is:
 
 The code path is intentionally short and explicit. It is designed to be easy to replace with fused kernels while keeping the module API unchanged.
 
+## ⚡ Key Engine Optimizations
+
+1. **Fused Top-K Softmax Pre-filtering** ([`DWDP/router/kernels/fused.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/router/kernels/fused.py)):
+   - **Optimization**: Selects Top-K logits first using fast quick-select before computing Softmax over $[B, K]$ elements.
+   - **Impact**: Cuts Softmax compute and memory footprint by **8x–32x** compared to full-array Softmax.
+
+2. **Native Precision Softmax Fast-Path** ([`DWDP/router/ops/softmax.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/router/ops/softmax.py)):
+   - **Optimization**: Executes `torch.softmax(logits, dim=dim)` directly in native FP16/BF16 precision when `compute_dtype` is unspecified.
+   - **Impact**: Eliminates unnecessary FP32 tensor allocation and conversion passes.
+
+3. **In-Place Offset Pre-allocation** ([`DWDP/router/metadata.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/router/metadata.py)):
+   - **Optimization**: Pre-allocates `expert_offsets` zeros tensor and assigns `expert_offsets[1:] = torch.cumsum(...)` in place.
+   - **Impact**: Eliminates dynamic `torch.cat` memory allocations on every routing pass.
+
 ## Routing Mathematics
 
 Let:

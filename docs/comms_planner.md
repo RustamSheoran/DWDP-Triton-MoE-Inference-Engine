@@ -45,6 +45,16 @@ flowchart TD
 
 The Scheduler decides expert execution order. The Comms Planner describes communication requirements for that order. The Executor should consume `CommunicationPlan` and `ExecutionPlan` without needing to know which planner policy produced them.
 
+## ⚡ Key Engine Optimizations
+
+1. **Multi-GPU Expert Parallel Communication Planner** ([`DWDP/comms_planner/expert_parallel.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/comms_planner/expert_parallel.py)):
+   - **Optimization**: Partitions MoE experts evenly across multi-GPU nodes and transfers only small activation tokens over PCIe/NVLink, bypassing PCIe weight streaming bottlenecks.
+   - **Impact**: Eliminates PCIe weight transfer stalls in multi-GPU nodes.
+
+2. **Cached Empty Tensor Lookup** ([`DWDP/comms_planner/ops/single_gpu.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/comms_planner/ops/single_gpu.py)):
+   - **Optimization**: Implemented per-device empty tensor lookup table (`_empty_cache`) to reuse pre-allocated empty `int64` tensors.
+   - **Impact**: Eliminates GPU memory allocator bookkeeping overhead during communication planning.
+
 ## Current Implementation
 
 The current implementation provides:

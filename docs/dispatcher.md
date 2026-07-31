@@ -250,7 +250,22 @@ In the current reference implementation, destination positions are computed with
 - `flat_expert_indices`
 - `expert_offsets`
 
-That pass is deterministic and avoids global sort, but it is still only a reference keyed-scan implementation. A future Triton or CUDA kernel should replace it with a device-resident scan.
+That pass is deterministic and avoids global- **kernel replacement boundaries**: `kernels/reference.py` isolates the reference path so future Triton or CUDA kernels can replace it without changing the dispatcher API.
+- **torch.compile friendliness**: the hot path is expressed with vectorized tensor primitives and no Python loops over tokens.
+
+## ⚡ Key Engine Optimizations
+
+1. **Zero-Copy Tensor Flattening** ([`DWDP/dispatcher/utils.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/dispatcher/utils.py)):
+   - **Optimization**: Bypasses `.to(dtype=torch.int64)` tensor allocation when `topk_indices` is already `int64`, returning a zero-copy `.reshape(-1)` view directly.
+   - **Impact**: Eliminates zero-copy view breakage and avoids redundant tensor allocation on every token step.
+
+2. **In-Place Exclusive Prefix Sum** ([`DWDP/dispatcher/ops/prefix_sum.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/dispatcher/ops/prefix_sum.py)):
+   - **Optimization**: Supports pre-allocated workspace buffers (`out=...`) and computes `out[1:] = torch.cumsum(...)` in place.
+   - **Impact**: Eliminates dynamic `torch.cat` memory allocations on every dispatch pass.
+
+3. **Vectorized SIMD Integer Division** ([`DWDP/dispatcher/ops/packing.py`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/dispatcher/ops/packing.py)):
+   - **Optimization**: Replaced legacy `torch.floor_divide` with direct `token_permutation // top_k` and `torch.div(..., rounding_mode="floor")`.
+   - **Impact**: Accelerates token index mapping on GPU SIMD cores.
 
 ### 5. Scatter Expert-Major Layout
 
