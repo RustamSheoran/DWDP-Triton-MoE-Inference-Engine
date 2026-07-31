@@ -24,7 +24,6 @@ from .topology import CommunicationDomain, TopologyMetadata
 from .workspace import CommunicationPlannerWorkspace
 
 
-@register_communication_planner("expert_parallel")
 class ExpertParallelPlanner(BaseCommunicationPlanner):
     """Expert-Parallel communication planner for multi-GPU inference."""
 
@@ -75,3 +74,6 @@ class ExpertParallelPlanner(BaseCommunicationPlanner):
             deps=DependencyMetadata(stage_dependencies=[]),
             stats=CommunicationStatistics(total_bytes_planned=0),
         )
+
+
+register_communication_planner("expert_parallel", ExpertParallelPlanner)
