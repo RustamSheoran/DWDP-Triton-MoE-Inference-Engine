@@ -88,12 +88,26 @@ fi
 # ------------------------------------------------------------------------------
 echo "[INFO] Validating PyTorch, VRAM Capacity, & Hardware Capabilities..."
 
-PRECISION_TAG="$("${PYTHON_BIN}" - <<PY
-import torch
+SYS_INFO="$("${PYTHON_BIN}" - <<PY
+import re, torch
 
-if not torch.cuda.is_available():
-    print("fp16")
-else:
+prec = "fp16"
+gpu = "cpu"
+if torch.cuda.is_available():
+    count = torch.cuda.device_count()
+    raw_gpu = torch.cuda.get_device_name(0).lower()
+    clean_gpu = raw_gpu
+    for prefix in ["nvidia", "geforce", "rtx", "tesla"]:
+        clean_gpu = clean_gpu.replace(prefix, "")
+    clean_gpu = re.sub(r'[^a-z0-9]+', '_', clean_gpu).strip('_')
+    if not clean_gpu:
+        clean_gpu = "gpu"
+        
+    if count > 1:
+        gpu = f"cluster--{count}x{clean_gpu}"
+    else:
+        gpu = f"1x{clean_gpu}"
+    
     props = torch.cuda.get_device_properties(0)
     vram_gb = props.total_memory / (1024 ** 3)
     capability = torch.cuda.get_device_capability(0)
@@ -106,25 +120,31 @@ else:
     req_quant = "${QUANT}"
     if req_quant == "fp8":
         if vram_gb >= total_req_gb and capability >= (8, 9) and has_e4m3:
-            print("e4m3")
+            prec = "e4m3"
         else:
-            print("4bit")
+            prec = "4bit"
     elif req_quant == "4bit":
-        print("4bit")
+        prec = "4bit"
     elif req_quant == "8bit":
-        print("8bit")
+        prec = "8bit"
     else:
-        print("fp16")
+        prec = "fp16"
+
+print(f"{prec}:{gpu}")
 PY
 )"
 
-RESULTS_DIR="${REPO_ROOT}/benchmark-results/${PRECISION_TAG}_run_${TIMESTAMP}"
-ZIP_NAME="DWDP_${PRECISION_TAG}_Benchmark_Results_${TIMESTAMP}.zip"
+PRECISION_TAG="${SYS_INFO%%:*}"
+GPU_TAG="${SYS_INFO##*:}"
+
+RESULTS_DIR="${REPO_ROOT}/benchmark-results/${PRECISION_TAG}_${GPU_TAG}_run_${TIMESTAMP}"
+ZIP_NAME="DWDP_${PRECISION_TAG}_${GPU_TAG}_Benchmark_Results_${TIMESTAMP}.zip"
 ZIP_PATH="${REPO_ROOT}/${ZIP_NAME}"
 
-echo "[PRECISION SELECTION] Active Precision Tag: ${PRECISION_TAG}"
-echo "[PRECISION SELECTION] Output Directory:      ${RESULTS_DIR}"
-echo "[PRECISION SELECTION] ZIP Archive Target:    ${ZIP_NAME}"
+echo "[SELECTION] Active Precision Tag: ${PRECISION_TAG}"
+echo "[SELECTION] Active GPU Tag:       ${GPU_TAG}"
+echo "[SELECTION] Output Directory:    ${RESULTS_DIR}"
+echo "[SELECTION] ZIP Archive Target:  ${ZIP_NAME}"
 
 # ------------------------------------------------------------------------------
 # Step 3: Run Benchmark & Profiling Pass
