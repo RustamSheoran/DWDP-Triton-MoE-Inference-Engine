@@ -16,12 +16,12 @@ from DWDP.comms_planner import (  # noqa: E402
     TopologyMetadata,
 )
 from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
-from DWDP.executor import (
+from DWDP.executor import (  # noqa: E402
     ExecutorConfig,
     ExecutorWorkspace,
     PyTorchExecutor,
     build_executor,
-)  # noqa: E402
+)
 from DWDP.executor.experts import ExpertRegistry  # noqa: E402
 from DWDP.scheduler import (  # noqa: E402
     DependencyMetadata as SchedulerDependencyMetadata,

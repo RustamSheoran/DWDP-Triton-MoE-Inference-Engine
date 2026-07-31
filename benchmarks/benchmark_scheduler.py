@@ -158,7 +158,7 @@ def main() -> None:
     )
 
     print(f"device={args.device}")
-    print(f"policy=round_robin")
+    print("policy=round_robin")
     print(f"experts={args.num_experts} active_experts={active_experts}")
     print(f"assignments={args.assignments} stream_count={args.stream_count}")
     print(f"latency_with_workspace_us={with_workspace_seconds * 1e6:.2f}")

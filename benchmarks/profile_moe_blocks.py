@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import torch
 from transformers import AutoModelForCausalLM

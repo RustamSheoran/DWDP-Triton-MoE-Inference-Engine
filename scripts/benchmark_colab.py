@@ -137,7 +137,7 @@ def check_vram_and_select_precision(
                 f"[VRAM CHECK] FP8 requires ~{fp8_needed_gb:.1f} GB VRAM, but GPU only has {vram_gb:.1f} GB."
             )
             print(
-                "[VRAM CHECK] Automatically switching precision to 4bit (NF4 / NVFP4) to avoid Out-Of-Memory (OOM) error!"
+                f"[VRAM CHECK] Automatically switching precision to 4bit (NF4 / NVFP4, ~{fp4_needed_gb:.1f} GB needed) to avoid Out-Of-Memory (OOM) error!"
             )
             return (
                 "4bit",

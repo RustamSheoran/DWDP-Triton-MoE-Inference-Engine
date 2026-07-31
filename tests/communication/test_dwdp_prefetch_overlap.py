@@ -6,10 +6,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from DWDP.comms_planner.config import CommunicationPlannerConfig
-from DWDP.comms_planner.static import StaticCommunicationPlanner
-from DWDP.communication.streams import CudaStreams, StreamRole
-from DWDP.scheduler.execution import ExecutionPlan
+from DWDP.comms_planner.config import CommunicationPlannerConfig  # noqa: E402
+from DWDP.comms_planner.static import StaticCommunicationPlanner  # noqa: E402
+from DWDP.communication.streams import CudaStreams, StreamRole  # noqa: E402
+from DWDP.scheduler.execution import ExecutionPlan  # noqa: E402
 
 
 def test_dwdp_double_buffer_prefetch_plan_generation() -> None:
@@ -77,7 +77,6 @@ def test_fp8_scale_factor_prefetch_pipelining() -> None:
     from DWDP.executor.weights import (
         ExpertWeightProvider,
         GateUpWeightProvider,
-        LinearWeightProvider,
         QwenSwiGLUWeightProvider,
     )
 
