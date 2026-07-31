@@ -193,19 +193,37 @@ def input_device(model: Any) -> torch.device:
 
 
 def resolve_hf_token(explicit_token: str | None) -> str | None:
-    """Resolve a token from CLI, environment, or Colab Secrets."""
-
+    """Resolve a token from CLI, environment, Colab Secrets, or huggingface_hub cache."""
     if explicit_token:
         return explicit_token
-    environment_token = os.environ.get("HF_TOKEN")
-    if environment_token:
-        return environment_token
+
+    env_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if env_token:
+        return env_token
+
     try:
         from google.colab import userdata
 
-        return userdata.get("HF_TOKEN") or None
+        for key in ("HF_TOKEN", "hf_token", "HF_TOKEN_READ"):
+            try:
+                token = userdata.get(key)
+                if token:
+                    return token
+            except Exception:
+                continue
     except Exception:
-        return None
+        pass
+
+    try:
+        from huggingface_hub import get_token
+
+        token = get_token()
+        if token:
+            return token
+    except Exception:
+        pass
+
+    return None
 
 
 def make_inputs(
