@@ -35,6 +35,23 @@ The dispatcher produces one contiguous expert-major assignment stream. The sched
 
 ---
 
+## 🧠 VRAM Estimation & Auto-Quantization Switching
+
+Before loading models, the engine evaluates available VRAM and GPU hardware capabilities to prevent Out-Of-Memory (OOM) failures:
+
+### 1. Memory Calculation Formula
+$$\text{Required VRAM} = \text{Model Weight Memory} + \text{KV Cache Footprint} + \text{CUDA Workspace Buffer (1.5 GB)}$$
+
+where KV Cache memory is estimated as:
+$$\text{KV Cache} = 2 \times \text{layers} \times \text{heads} \times \text{head-dim} \times (\text{seq-len} + \text{max-new-tokens}) \times \text{batch-size} \times 2\text{ bytes}$$
+
+### 2. Automatic Precision Selection
+- **FP8 (E4M3)**: Activated if GPU Compute Capability $\ge 8.9$ (Ada / Hopper / Blackwell) AND total GPU VRAM $\ge \text{Required VRAM}$.
+- **4-bit (NF4 / NVFP4)**: Automatically activated if FP8 exceeds VRAM or GPU compute capability $< 8.9$ (e.g. Tesla T4, RTX 3090, A100), ensuring zero Out-Of-Memory (OOM) crashes.
+
+
+---
+
 ## 🗂️ Interactive Repository & Documentation Map
 
 Click any link below to directly navigate to the corresponding GitHub file or documentation page:
@@ -57,7 +74,7 @@ Click any link below to directly navigate to the corresponding GitHub file or do
 
 ## ☁️ Running on Google Colab
 
-To run the automated FP8 benchmark directly in a Google Colab notebook cell:
+To run the automated FP8 benchmark directly in a Google Colab notebook cell (includes automatic model download and browser `.zip` artifact download):
 
 ```python
 # 1. Clone the repository into Google Colab
@@ -66,28 +83,40 @@ To run the automated FP8 benchmark directly in a Google Colab notebook cell:
 # 2. Change working directory to the repo root
 %cd DWDP-Triton-MoE-Inference-Engine
 
-# 3. Launch the one-command FP8 benchmark & profiling suite
+# 3. Launch the master benchmark suite (automatically triggers browser zip download when finished)
 !bash scripts/run_all_benchmarks.sh
 ```
 
 ---
 
-## 💻 Local Quick Start
+## 💻 Local Quick Start & Parameter Customization
 
-Run the full automated FP8 benchmark and profiling suite locally with one command:
+Run the full automated benchmark and profiling suite locally with one command:
 
 ```bash
 bash scripts/run_all_benchmarks.sh
 ```
 
-### What this command automatically does:
-1. **GPU & Memory Pre-flight**: Validates GPU hardware (`nvidia-smi`) and total VRAM capacity.
-2. **Auto-Precision Selection**: Estimates combined model weights, KV cache footprint, and workspace buffer size. Runs native FP8 (E4M3) if hardware & VRAM permit; otherwise automatically falls back to 4-bit (NF4 / NVFP4) to avoid Out-Of-Memory (OOM) failures.
-3. **Dependency Auto-install**: Installs missing dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
-4. **FP8 Execution & Profiling**: Runs model execution via [benchmark_colab.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
-5. **Zip Archiving**: Bundles all benchmark results into a dynamically named archive (`DWDP_<precision>_<1xGPU|cluster--NxGPU>_Benchmark_Results_<timestamp>.zip`, e.g. `DWDP_4bit_1xt4_Benchmark_Results_...zip` or `DWDP_e4m3_cluster--8x3090_Benchmark_Results_...zip`) in the root directory.
+### Customizing Arguments & Environment Variables
 
-For customization options (e.g. running on A100/H100/L4 GPUs, changing batch sizes, or testing other models like Mixtral or DeepSeek), see [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md).
+You can customize any benchmark parameter (model name, precision, iterations, batch size, etc.) directly on the command line:
+
+```bash
+# Example 1: Custom iterations & batch size on Tesla T4
+MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="e4m3" ITERS=5 BATCH_SIZE=1 bash scripts/run_all_benchmarks.sh
+
+# Example 2: High-throughput benchmark on A100 / H100 / L4 GPUs
+MODEL="mistralai/Mixtral-8x7B-v0.1" QUANT="e4m3" ITERS=20 BATCH_SIZE=4 SEQ_LEN=512 MAX_NEW_TOKENS=256 bash scripts/run_all_benchmarks.sh
+```
+
+### What `run_all_benchmarks.sh` automatically does:
+1. **GPU & Memory Pre-flight**: Inspects GPU VRAM (`nvidia-smi` / `torch.cuda`) and automatically sets fast default iterations (`WARMUP=2`, `ITERS=5`) on Tesla T4 or $\le 16$ GB GPUs so runs finish quickly.
+2. **Auto-Precision Selection**: Estimates combined model weights, KV cache footprint, and workspace buffer size. Runs native FP8 (E4M3) if hardware & VRAM permit; otherwise automatically falls back to 4-bit (NF4 / NVFP4) to avoid Out-Of-Memory (OOM) failures.
+3. **Dependency & Model Auto-download**: Downloads Hugging Face model weights and installs missing Python dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
+4. **FP8 Execution & Profiling**: Runs model execution via [benchmark_colab.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
+5. **Zip Archiving & Colab Auto-Download**: Bundles all benchmark results into a dynamically named archive (`DWDP_<precision>_<1xGPU|cluster--NxGPU>_Benchmark_Results_<timestamp>.zip`) in the root directory and triggers automatic browser download on Google Colab (`google.colab.files.download`).
+
+For more details, see [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md).
 
 ---
 

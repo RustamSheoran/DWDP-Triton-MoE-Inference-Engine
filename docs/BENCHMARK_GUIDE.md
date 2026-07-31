@@ -57,21 +57,21 @@ BATCH_SIZE=4 SEQ_LEN=512 MAX_NEW_TOKENS=256 bash scripts/run_all_benchmarks.sh
 ### 3. Hardware-Specific Scaling
 
 #### Tesla T4 (Default / Colab Free Tier)
-- **Optimal Settings**:
+- **Optimal Settings** (Auto-fallbacks to 4bit NF4/NVFP4 if FP8 exceeds VRAM):
   ```bash
-  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="fp8" BATCH_SIZE=1 SEQ_LEN=128 MAX_NEW_TOKENS=128 bash scripts/run_all_benchmarks.sh
+  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="e4m3" BATCH_SIZE=1 SEQ_LEN=128 MAX_NEW_TOKENS=128 bash scripts/run_all_benchmarks.sh
   ```
 
 #### NVIDIA L4 / A10G (Single GPU Cloud)
 - **Optimal Settings**:
   ```bash
-  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="fp8" BATCH_SIZE=4 SEQ_LEN=512 MAX_NEW_TOKENS=256 ITERS=50 bash scripts/run_all_benchmarks.sh
+  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="e4m3" BATCH_SIZE=4 SEQ_LEN=512 MAX_NEW_TOKENS=256 ITERS=50 bash scripts/run_all_benchmarks.sh
   ```
 
 #### NVIDIA A100 / H100 / H200 (Frontier Hardware)
 - **Optimal Settings**:
   ```bash
-  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="fp8" BATCH_SIZE=16 SEQ_LEN=2048 MAX_NEW_TOKENS=512 ITERS=100 bash scripts/run_all_benchmarks.sh
+  MODEL="Qwen/Qwen1.5-MoE-A2.7B" QUANT="e4m3" BATCH_SIZE=16 SEQ_LEN=2048 MAX_NEW_TOKENS=512 ITERS=100 bash scripts/run_all_benchmarks.sh
   ```
 
 ---

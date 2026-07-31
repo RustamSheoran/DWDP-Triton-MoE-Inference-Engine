@@ -22,9 +22,30 @@ QUANT="${QUANT:-fp8}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 SEQ_LEN="${SEQ_LEN:-128}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-128}"
-WARMUP="${WARMUP:-5}"
-ITERS="${ITERS:-20}"
 PROMPT="${PROMPT:-Explain the architecture of Mixture of Experts in deep learning.}"
+
+# Detect if GPU is Tesla T4 or <= 16GB VRAM to set fast default iterations
+IS_SLOW_GPU="$("${PYTHON_BIN}" -c '
+import torch
+if not torch.cuda.is_available():
+    print("true")
+else:
+    props = torch.cuda.get_device_properties(0)
+    vram_gb = props.total_memory / (1024 ** 3)
+    raw_gpu = torch.cuda.get_device_name(0).lower()
+    if "t4" in raw_gpu or vram_gb <= 16.0:
+        print("true")
+    else:
+        print("false")
+')"
+
+if [[ "${IS_SLOW_GPU}" == "true" ]]; then
+  WARMUP="${WARMUP:-2}"
+  ITERS="${ITERS:-5}"
+else
+  WARMUP="${WARMUP:-5}"
+  ITERS="${ITERS:-20}"
+fi
 
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
 TEMP_LOG="$(mktemp -t dwdp_bench.XXXXXX.log)"
@@ -44,7 +65,7 @@ echo "Requested Quant:  ${QUANT}"
 echo "Batch Size:       ${BATCH_SIZE}"
 echo "Sequence Length:  ${SEQ_LEN}"
 echo "Max New Tokens:   ${MAX_NEW_TOKENS}"
-echo "Warmup / Iters:   ${WARMUP} / ${ITERS}"
+echo "Warmup / Iters:   ${WARMUP} / ${ITERS} (Fast defaults on T4/VRAM <= 16GB)"
 echo "================================================================="
 
 # ------------------------------------------------------------------------------
@@ -189,6 +210,16 @@ if command -v zip >/dev/null 2>&1; then
   echo " Zip Archive Created: ${ZIP_PATH}"
   echo " Benchmark Folder:   ${RESULTS_DIR}"
   echo "================================================================="
+
+  # Automatically trigger Google Colab browser download if running in Colab
+  "${PYTHON_BIN}" - <<PY
+try:
+    from google.colab import files
+    print("[COLAB AUTO-DOWNLOAD] Triggering browser download for ${ZIP_NAME}...")
+    files.download("${ZIP_PATH}")
+except Exception:
+    pass
+PY
 else
   echo "[WARNING] zip utility not available. Results saved in ${RESULTS_DIR}"
 fi
