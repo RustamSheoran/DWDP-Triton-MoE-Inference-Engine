@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--iters", type=int, default=5)
-    parser.add_argument("--quantization", choices=("fp16", "4bit", "8bit"), default="4bit")
+    parser.add_argument("--quantization", choices=("fp16", "fp8", "4bit", "8bit"), default="fp8")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--hf-token", "--use", dest="hf_token", default=None, help="Hugging Face token; also read from HF_TOKEN.")
     profile_group = parser.add_mutually_exclusive_group()
@@ -83,16 +83,20 @@ def quantization_config(mode: str) -> BitsAndBytesConfig:
 
 
 def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
+    target_dtype = torch.float16
+    if mode == "fp8":
+        target_dtype = getattr(torch, "float8_e4m3fn", torch.float16)
     kwargs: dict[str, Any] = {
         "device_map": "auto",
-        "torch_dtype": torch.float16,
+        "torch_dtype": target_dtype,
         "low_cpu_mem_usage": True,
     }
-    if mode != "fp16":
+    if mode in ("4bit", "8bit"):
         kwargs["quantization_config"] = quantization_config(mode)
     if token:
         kwargs["token"] = token
     return kwargs
+
 
 
 def input_device(model: Any) -> torch.device:
