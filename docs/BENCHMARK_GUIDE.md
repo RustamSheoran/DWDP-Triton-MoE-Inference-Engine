@@ -27,7 +27,7 @@ bash scripts/run_all_benchmarks.sh
    - **Decode Throughput** ($\text{tokens/sec}$)
    - **Peak VRAM Allocation**
    - **Torch Profiler Operator Breakdown** (categorizing router, dispatcher, scheduler, gather, and FP8 GEMM kernel times)
-5. **Artifact Zip & Packaging**: Bundles all outputs into `DWDP_FP8_Benchmark_Results_<timestamp>.zip` directly in the root directory for easy download.
+5. **Artifact Zip & Packaging**: Bundles all outputs into `DWDP_<e4m3|4bit|fp16>_Benchmark_Results_<timestamp>.zip` directly in the root directory reflecting the executed precision.
 
 
 ---
@@ -81,8 +81,8 @@ BATCH_SIZE=4 SEQ_LEN=512 MAX_NEW_TOKENS=256 bash scripts/run_all_benchmarks.sh
 After running `bash scripts/run_all_benchmarks.sh`:
 
 1. **Locate Artifacts**:
-   - Main Zip file: `DWDP_FP8_Benchmark_Results_<timestamp>.zip` (in root directory).
-   - Timestamped folder: `benchmark-results/fp8_run_<timestamp>/`.
+   - Main Zip file: `DWDP_<e4m3|4bit|fp16>_Benchmark_Results_<timestamp>.zip` (in root directory).
+   - Timestamped folder: `benchmark-results/<e4m3|4bit|fp16>_run_<timestamp>/`.
 2. **Download Artifact**:
    - Download the generated `.zip` file from your cloud/Colab environment to your local machine.
 3. **Commit & Push to Git**:

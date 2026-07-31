@@ -85,7 +85,7 @@ bash scripts/run_all_benchmarks.sh
 2. **Auto-Precision Selection**: Estimates combined model weights, KV cache footprint, and workspace buffer size. Runs native FP8 (E4M3) if hardware & VRAM permit; otherwise automatically falls back to 4-bit (NF4 / NVFP4) to avoid Out-Of-Memory (OOM) failures.
 3. **Dependency Auto-install**: Installs missing dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
 4. **FP8 Execution & Profiling**: Runs model execution via [benchmark_colab.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
-5. **Zip Archiving**: Bundles all benchmark results into a timestamped archive (`DWDP_FP8_Benchmark_Results_<timestamp>.zip`) directly in the main project directory for easy download.
+5. **Zip Archiving**: Bundles all benchmark results into a dynamically named archive (`DWDP_<e4m3|4bit|fp16>_Benchmark_Results_<timestamp>.zip`) in the root directory reflecting the executed precision.
 
 For customization options (e.g. running on A100/H100/L4 GPUs, changing batch sizes, or testing other models like Mixtral or DeepSeek), see [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md).
 

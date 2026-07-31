@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# DWDP Master FP8 Benchmark & Profiling Launcher
+# DWDP Master Benchmark & Profiling Launcher
 # ==============================================================================
-# One-command automated script to install dependencies, run FP8 benchmarking
-# and Torch profiling for MoE architectures (starting with Qwen1.5-MoE on T4),
-# generate detailed breakdown reports, and bundle results into a ZIP archive
-# in the main project directory.
+# One-command automated script to install dependencies, run benchmarking
+# and Torch profiling for MoE architectures (Qwen1.5-MoE, Mixtral, DeepSeek),
+# detect GPU VRAM & auto-select precision (e4m3 / 4bit / fp16), generate reports,
+# and bundle results into a dynamic ZIP archive in the main project directory.
 # ==============================================================================
 
 set -euo pipefail
@@ -27,10 +27,7 @@ ITERS="${ITERS:-20}"
 PROMPT="${PROMPT:-Explain the architecture of Mixture of Experts in deep learning.}"
 
 TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-RESULTS_DIR="${REPO_ROOT}/benchmark-results/fp8_run_${TIMESTAMP}"
-ZIP_NAME="DWDP_FP8_Benchmark_Results_${TIMESTAMP}.zip"
-ZIP_PATH="${REPO_ROOT}/${ZIP_NAME}"
-TEMP_LOG="$(mktemp -t dwdp_fp8_bench.XXXXXX.log)"
+TEMP_LOG="$(mktemp -t dwdp_bench.XXXXXX.log)"
 
 fail() {
   local status="$1"
@@ -40,15 +37,14 @@ fail() {
 }
 
 echo "================================================================="
-echo "        DWDP Master FP8 Benchmark & Profiling Launcher"
+echo "        DWDP Master Benchmark & Profiling Launcher"
 echo "================================================================="
 echo "Model:            ${MODEL}"
-echo "Quantization:     ${QUANT}"
+echo "Requested Quant:  ${QUANT}"
 echo "Batch Size:       ${BATCH_SIZE}"
 echo "Sequence Length:  ${SEQ_LEN}"
 echo "Max New Tokens:   ${MAX_NEW_TOKENS}"
 echo "Warmup / Iters:   ${WARMUP} / ${ITERS}"
-echo "Output Directory: ${RESULTS_DIR}"
 echo "================================================================="
 
 # ------------------------------------------------------------------------------
@@ -88,44 +84,55 @@ if ! command -v zip >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# Step 2: Validate PyTorch, VRAM Capacity, & Hardware Capabilities
+# Step 2: Validate PyTorch, VRAM Capacity, & Determine Dynamic Precision Tag
 # ------------------------------------------------------------------------------
 echo "[INFO] Validating PyTorch, VRAM Capacity, & Hardware Capabilities..."
-"${PYTHON_BIN}" - <<'PY'
+
+PRECISION_TAG="$("${PYTHON_BIN}" - <<PY
 import torch
 
-print(f"PyTorch Version: {torch.__version__}")
-print(f"CUDA Available:  {torch.cuda.is_available()}")
-if torch.cuda.is_available():
+if not torch.cuda.is_available():
+    print("fp16")
+else:
     props = torch.cuda.get_device_properties(0)
     vram_gb = props.total_memory / (1024 ** 3)
     capability = torch.cuda.get_device_capability(0)
     has_e4m3 = hasattr(torch, "float8_e4m3fn")
     
-    print(f"GPU Name:        {torch.cuda.get_device_name(0)}")
-    print(f"Total VRAM:      {vram_gb:.2f} GB")
-    print(f"CUDA Capability: {capability[0]}.{capability[1]}")
-    print(f"Native FP8 (E4M3) Exposed: {has_e4m3}")
+    total_tokens = ${SEQ_LEN} + ${MAX_NEW_TOKENS}
+    kv_cache_est_gb = (2 * 32 * 32 * 128 * total_tokens * ${BATCH_SIZE} * 2) / (1024 ** 3)
+    total_req_gb = 14.3 + kv_cache_est_gb + 1.5
     
-    # Calculate estimated requirements for model weights + KV cache + CUDA overhead
-    model_fp8_est_gb = 14.3
-    kv_cache_est_gb = (2 * 32 * 32 * 128 * 256 * 1 * 2) / (1024 ** 3) # ~0.13 GB
-    total_req_gb = model_fp8_est_gb + kv_cache_est_gb + 1.5
-    
-    print(f"[VRAM ESTIMATOR] Estimated FP8 requirements (Model + KV Cache + Workspace): ~{total_req_gb:.2f} GB")
-    if vram_gb >= total_req_gb and capability >= (8, 9) and has_e4m3:
-        print("[PRECISION SELECTION] FP8 (E4M3) execution fully supported and fits within VRAM.")
+    req_quant = "${QUANT}"
+    if req_quant == "fp8":
+        if vram_gb >= total_req_gb and capability >= (8, 9) and has_e4m3:
+            print("e4m3")
+        else:
+            print("4bit")
+    elif req_quant == "4bit":
+        print("4bit")
+    elif req_quant == "8bit":
+        print("8bit")
     else:
-        print(f"[PRECISION SELECTION] VRAM ({vram_gb:.1f}GB) or Hardware Capability ({capability[0]}.{capability[1]}) is below FP8 threshold. Auto-fallback to 4bit (NF4/NVFP4) enabled.")
+        print("fp16")
 PY
+)"
+
+RESULTS_DIR="${REPO_ROOT}/benchmark-results/${PRECISION_TAG}_run_${TIMESTAMP}"
+ZIP_NAME="DWDP_${PRECISION_TAG}_Benchmark_Results_${TIMESTAMP}.zip"
+ZIP_PATH="${REPO_ROOT}/${ZIP_NAME}"
+
+echo "[PRECISION SELECTION] Active Precision Tag: ${PRECISION_TAG}"
+echo "[PRECISION SELECTION] Output Directory:      ${RESULTS_DIR}"
+echo "[PRECISION SELECTION] ZIP Archive Target:    ${ZIP_NAME}"
 
 # ------------------------------------------------------------------------------
-# Step 3: Run FP8 Benchmark & Profiling Pass
+# Step 3: Run Benchmark & Profiling Pass
 # ------------------------------------------------------------------------------
 mkdir -p "${RESULTS_DIR}"
 cd -- "${REPO_ROOT}"
 
-echo "[INFO] Executing FP8 benchmark and collecting prefill/decode profile metrics..."
+echo "[INFO] Executing benchmark (${PRECISION_TAG}) and collecting profile metrics..."
 set +e
 "${PYTHON_BIN}" "${SCRIPT_DIR}/benchmark_colab.py" \
   --model "${MODEL}" \
@@ -157,7 +164,7 @@ cd -- "${REPO_ROOT}"
 if command -v zip >/dev/null 2>&1; then
   zip -r -q "${ZIP_NAME}" "benchmark-results/$(basename "${RESULTS_DIR}")"
   echo "================================================================="
-  echo " SUCCESS: FP8 Benchmark Completed & Packaged!"
+  echo " SUCCESS: ${PRECISION_TAG} Benchmark Completed & Packaged!"
   echo "================================================================="
   echo " Zip Archive Created: ${ZIP_PATH}"
   echo " Benchmark Folder:   ${RESULTS_DIR}"
