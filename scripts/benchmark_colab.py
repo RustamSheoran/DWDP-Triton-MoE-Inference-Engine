@@ -177,7 +177,7 @@ def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
         target_dtype = getattr(torch, "float8_e4m3fn", torch.float16)
     kwargs: dict[str, Any] = {
         "device_map": "auto",
-        "torch_dtype": target_dtype,
+        "dtype": target_dtype,
         "low_cpu_mem_usage": True,
     }
     if mode in ("4bit", "8bit"):

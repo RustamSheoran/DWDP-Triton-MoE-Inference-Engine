@@ -584,7 +584,7 @@ def main() -> None:
     torch.cuda.manual_seed_all(args.seed)
 
     model = (
-        AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype)
+        AutoModelForCausalLM.from_pretrained(args.model, dtype=dtype)
         .cuda()
         .eval()
     )
