@@ -103,6 +103,7 @@ else
 fi
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
+export HF_HUB_ENABLE_EMERGENCY_RETRY=1
 
 echo "[INFO] Verifying & installing Python dependencies (including hf_transfer for fast downloads)..."
 "${PYTHON_BIN}" -m pip install -q -U \

@@ -39,7 +39,12 @@ class HuggingFaceAdapter(BaseModelAdapter):
         load_tokenizer = bool(model_kwargs.pop("load_tokenizer", True))
         model = AutoModelForCausalLM.from_pretrained(model_name_or_path, **model_kwargs)
         if load_tokenizer and tokenizer is None:
-            tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+            tokenizer_kwargs = {}
+            if "token" in kwargs:
+                tokenizer_kwargs["token"] = kwargs["token"]
+            if "trust_remote_code" in kwargs:
+                tokenizer_kwargs["trust_remote_code"] = kwargs["trust_remote_code"]
+            tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, **tokenizer_kwargs)
         adapter_cls = detect_adapter_class(model)
         if adapter_cls is not None and adapter_cls is not cls:
             adapter = adapter_cls(
