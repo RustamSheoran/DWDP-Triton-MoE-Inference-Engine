@@ -16,6 +16,23 @@ export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+# Auto-resolve HF_TOKEN from Google Colab userdata secrets if running in Colab
+if [[ -z "${HF_TOKEN:-}" ]]; then
+  HF_TOKEN_RESOLVED="$("${PYTHON_BIN}" -c '
+try:
+    from google.colab import userdata
+    t = userdata.get("HF_TOKEN") or userdata.get("hf_token") or userdata.get("HF_TOKEN_READ")
+    if t:
+        print(t)
+except Exception:
+    pass
+' 2>/dev/null || true)"
+  if [[ -n "${HF_TOKEN_RESOLVED}" ]]; then
+    export HF_TOKEN="${HF_TOKEN_RESOLVED}"
+    export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN_RESOLVED}"
+  fi
+fi
+
 # ------------------------------------------------------------------------------
 # Configurable Defaults (Can be overridden via Environment Variables)
 # ------------------------------------------------------------------------------
@@ -178,6 +195,11 @@ cd -- "${REPO_ROOT}"
 
 echo "[INFO] Executing benchmark (${PRECISION_TAG}) and collecting profile metrics..."
 set +e
+TOKEN_ARG=()
+if [[ -n "${HF_TOKEN:-}" ]]; then
+  TOKEN_ARG=("--hf-token" "${HF_TOKEN}")
+fi
+
 "${PYTHON_BIN}" "${SCRIPT_DIR}/benchmark_colab.py" \
   --model "${MODEL}" \
   --quantization "${QUANT}" \
@@ -188,6 +210,7 @@ set +e
   --iters "${ITERS}" \
   --prompt "${PROMPT}" \
   --results-root "${RESULTS_DIR}" \
+  "${TOKEN_ARG[@]}" \
   --profile 2>&1 | tee "${TEMP_LOG}"
 BENCH_STATUS="${PIPESTATUS[0]}"
 set -e
