@@ -10,7 +10,8 @@ cudaIpcMemHandle_t exportHandle(const void* device_pointer) {
     throw std::invalid_argument("device pointer must be non-null");
   }
   cudaIpcMemHandle_t handle{};
-  DWDP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(device_pointer)));
+  DWDP_CUDA_CHECK(
+      cudaIpcGetMemHandle(&handle, const_cast<void*>(device_pointer)));
   return handle;
 }
 

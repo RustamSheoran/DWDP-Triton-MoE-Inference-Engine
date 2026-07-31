@@ -17,8 +17,14 @@ namespace dwdp::communication {
 
 class PrefetchWorker final {
  public:
-  PrefetchWorker(WeightManager&, CacheManager&, IPCManager&, DoubleBufferedStaging&, CUDAEventPool&,
-                 PrefetchQueue&, CUDAStreamPool&);
+  PrefetchWorker(
+      WeightManager&,
+      CacheManager&,
+      IPCManager&,
+      DoubleBufferedStaging&,
+      CUDAEventPool&,
+      PrefetchQueue&,
+      CUDAStreamPool&);
   ~PrefetchWorker() noexcept;
   void start();
   void stop() noexcept;

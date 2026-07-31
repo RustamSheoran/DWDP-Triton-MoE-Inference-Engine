@@ -5,7 +5,8 @@
 
 namespace dwdp::communication {
 
-DoubleBufferedStaging::DoubleBufferedStaging(int device_id) : device_id_(device_id) {
+DoubleBufferedStaging::DoubleBufferedStaging(int device_id)
+    : device_id_(device_id) {
   if (device_id < 0) {
     throw std::invalid_argument("device_id must be non-negative");
   }
@@ -89,8 +90,11 @@ void DoubleBufferedStaging::free() noexcept {
   current_index_ = 0;
 }
 
-void DoubleBufferedStaging::copyToNextAsync(const void* source, std::size_t bytes,
-                                            cudaMemcpyKind kind, cudaStream_t stream) {
+void DoubleBufferedStaging::copyToNextAsync(
+    const void* source,
+    std::size_t bytes,
+    cudaMemcpyKind kind,
+    cudaStream_t stream) {
   if (source == nullptr) {
     throw std::invalid_argument("copy source must be non-null");
   }
@@ -102,7 +106,8 @@ void DoubleBufferedStaging::copyToNextAsync(const void* source, std::size_t byte
   if (buffers_[next_index] == nullptr) {
     throw std::logic_error("staging buffers are not allocated");
   }
-  DWDP_CUDA_CHECK(cudaMemcpyAsync(buffers_[next_index], source, bytes, kind, stream));
+  DWDP_CUDA_CHECK(
+      cudaMemcpyAsync(buffers_[next_index], source, bytes, kind, stream));
 }
 
 std::size_t DoubleBufferedStaging::capacity() const noexcept {

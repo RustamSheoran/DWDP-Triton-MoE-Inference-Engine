@@ -22,7 +22,8 @@ void CUDAEventPool::initialize(std::size_t count) {
   std::scoped_lock lock(mutex_);
   if (!events_.empty()) {
     if (events_.size() != count) {
-      throw std::logic_error("CUDAEventPool cannot be resized after initialization");
+      throw std::logic_error(
+          "CUDAEventPool cannot be resized after initialization");
     }
     return;
   }
@@ -54,7 +55,8 @@ std::size_t CUDAEventPool::acquire() {
   DWDP_CUDA_CHECK(cudaSetDevice(device_id_));
   cudaEvent_t event_handle = nullptr;
   try {
-    DWDP_CUDA_CHECK(cudaEventCreateWithFlags(&event_handle, cudaEventDisableTiming));
+    DWDP_CUDA_CHECK(
+        cudaEventCreateWithFlags(&event_handle, cudaEventDisableTiming));
     events_.push_back(event_handle);
   } catch (...) {
     if (event_handle != nullptr) {

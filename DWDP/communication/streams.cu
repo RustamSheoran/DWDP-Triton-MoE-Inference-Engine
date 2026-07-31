@@ -25,8 +25,10 @@ void CUDAStreamPool::initialize() {
   DWDP_CUDA_CHECK(cudaGetDevice(&previous_device));
   DWDP_CUDA_CHECK(cudaSetDevice(device_id_));
   try {
-    DWDP_CUDA_CHECK(cudaStreamCreateWithFlags(&compute_stream_, cudaStreamNonBlocking));
-    DWDP_CUDA_CHECK(cudaStreamCreateWithFlags(&copy_stream_, cudaStreamNonBlocking));
+    DWDP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&compute_stream_, cudaStreamNonBlocking));
+    DWDP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&copy_stream_, cudaStreamNonBlocking));
     initialized_ = true;
   } catch (...) {
     if (copy_stream_ != nullptr) {

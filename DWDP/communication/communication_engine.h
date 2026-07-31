@@ -25,8 +25,10 @@ class CommunicationEngine final {
   CommunicationEngine& operator=(const CommunicationEngine&) = delete;
 
   void initialize(std::size_t staging_bytes);
-  void registerExpert(int expert_id, void* source_device_pointer, std::size_t size_bytes);
-  void registerIPCExpert(int expert_id, const cudaIpcMemHandle_t& handle, std::size_t size_bytes);
+  void registerExpert(
+      int expert_id, void* source_device_pointer, std::size_t size_bytes);
+  void registerIPCExpert(
+      int expert_id, const cudaIpcMemHandle_t& handle, std::size_t size_bytes);
   void shutdown() noexcept;
   void prefetch(int expert_id);
   void wait(int expert_id);

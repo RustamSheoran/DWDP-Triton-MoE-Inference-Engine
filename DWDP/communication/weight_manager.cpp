@@ -4,10 +4,15 @@
 
 namespace dwdp::communication {
 
-void WeightManager::registerExpert(int expert_id, void* device_pointer, std::size_t size_bytes,
-                                   std::size_t copy_event_index, BufferLocation location,
-                                   const cudaIpcMemHandle_t* ipc_handle) {
-  if (expert_id < 0 || size_bytes == 0 || (device_pointer == nullptr && ipc_handle == nullptr)) {
+void WeightManager::registerExpert(
+    int expert_id,
+    void* device_pointer,
+    std::size_t size_bytes,
+    std::size_t copy_event_index,
+    BufferLocation location,
+    const cudaIpcMemHandle_t* ipc_handle) {
+  if (expert_id < 0 || size_bytes == 0 ||
+      (device_pointer == nullptr && ipc_handle == nullptr)) {
     throw std::invalid_argument("invalid expert registration");
   }
   ExpertRecord record;
@@ -40,7 +45,8 @@ ExpertRecord WeightManager::beginLoad(int expert_id) {
   if (it == records_.end()) {
     throw std::out_of_range("expert is not registered");
   }
-  if (it->second.state != ResidentState::kUnloaded && it->second.state != ResidentState::kEvicted) {
+  if (it->second.state != ResidentState::kUnloaded &&
+      it->second.state != ResidentState::kEvicted) {
     throw std::logic_error("illegal transition to loading");
   }
   it->second.loading = true;
@@ -48,7 +54,8 @@ ExpertRecord WeightManager::beginLoad(int expert_id) {
   return it->second;
 }
 
-void WeightManager::completeLoad(int expert_id, void* staging_pointer, std::size_t buffer_index) {
+void WeightManager::completeLoad(
+    int expert_id, void* staging_pointer, std::size_t buffer_index) {
   if (staging_pointer == nullptr || buffer_index > 1) {
     throw std::invalid_argument("invalid staging completion");
   }
@@ -59,7 +66,8 @@ void WeightManager::completeLoad(int expert_id, void* staging_pointer, std::size
   }
   it->second.staging_pointer = staging_pointer;
   it->second.buffer_index = buffer_index;
-  it->second.location = buffer_index == 0 ? BufferLocation::kStagingA : BufferLocation::kStagingB;
+  it->second.location =
+      buffer_index == 0 ? BufferLocation::kStagingA : BufferLocation::kStagingB;
   if (it->second.state != ResidentState::kLoading) {
     throw std::logic_error("illegal transition to staged");
   }
@@ -76,7 +84,8 @@ void WeightManager::activate(int expert_id, std::size_t active_buffer) {
   if (it == records_.end()) {
     throw std::out_of_range("expert is not registered");
   }
-  if (it->second.state != ResidentState::kStaged || it->second.buffer_index != active_buffer) {
+  if (it->second.state != ResidentState::kStaged ||
+      it->second.buffer_index != active_buffer) {
     throw std::logic_error("illegal transition to active");
   }
   it->second.state = ResidentState::kActive;
@@ -91,7 +100,8 @@ void WeightManager::evict(int expert_id) {
   if (it->second.reference_count != 0) {
     throw std::logic_error("cannot evict referenced expert");
   }
-  if (it->second.state != ResidentState::kStaged && it->second.state != ResidentState::kActive) {
+  if (it->second.state != ResidentState::kStaged &&
+      it->second.state != ResidentState::kActive) {
     throw std::logic_error("illegal transition to evicted");
   }
   it->second.resident = false;
@@ -109,7 +119,8 @@ void WeightManager::publishIPC(int expert_id, void* ipc_pointer) {
   if (it == records_.end()) {
     throw std::out_of_range("expert is not registered");
   }
-  if (it->second.state != ResidentState::kUnloaded && it->second.state != ResidentState::kEvicted) {
+  if (it->second.state != ResidentState::kUnloaded &&
+      it->second.state != ResidentState::kEvicted) {
     throw std::logic_error("illegal IPC publication");
   }
   it->second.ipc_pointer = ipc_pointer;
@@ -125,7 +136,8 @@ std::vector<int> WeightManager::invalidateBuffer(std::size_t buffer_index) {
   std::vector<int> ids;
   for (auto& [id, record] : records_) {
     if (record.ipc_imported || record.buffer_index != buffer_index ||
-        (record.state != ResidentState::kStaged && record.state != ResidentState::kActive)) {
+        (record.state != ResidentState::kStaged &&
+         record.state != ResidentState::kActive)) {
       continue;
     }
     if (record.reference_count != 0) {
@@ -212,7 +224,8 @@ void* WeightManager::getDevicePointer(int expert_id) const {
 void* WeightManager::getResidentPointer(int expert_id) const {
   const auto record = getRecord(expert_id);
   if (!record.resident || record.resident_pointer == nullptr ||
-      (record.state != ResidentState::kStaged && record.state != ResidentState::kActive)) {
+      (record.state != ResidentState::kStaged &&
+       record.state != ResidentState::kActive)) {
     throw std::logic_error("expert is not resident");
   }
   return record.resident_pointer;

@@ -17,7 +17,13 @@ enum class BufferLocation : std::uint8_t {
   kStagingB = 2,
   kImportedIPC = 3
 };
-enum class ResidentState : std::uint8_t { kUnloaded, kLoading, kStaged, kActive, kEvicted };
+enum class ResidentState : std::uint8_t {
+  kUnloaded,
+  kLoading,
+  kStaged,
+  kActive,
+  kEvicted
+};
 
 struct ExpertRecord {
   int expert_id{-1};
@@ -49,13 +55,17 @@ class WeightManager final {
   WeightManager(const WeightManager&) = delete;
   WeightManager& operator=(const WeightManager&) = delete;
 
-  void registerExpert(int expert_id, void* device_pointer, std::size_t size_bytes,
-                      std::size_t copy_event_index,
-                      BufferLocation location = BufferLocation::kResident,
-                      const cudaIpcMemHandle_t* ipc_handle = nullptr);
+  void registerExpert(
+      int expert_id,
+      void* device_pointer,
+      std::size_t size_bytes,
+      std::size_t copy_event_index,
+      BufferLocation location = BufferLocation::kResident,
+      const cudaIpcMemHandle_t* ipc_handle = nullptr);
   void unregisterExpert(int expert_id);
   [[nodiscard]] ExpertRecord beginLoad(int expert_id);
-  void completeLoad(int expert_id, void* staging_pointer, std::size_t buffer_index);
+  void completeLoad(
+      int expert_id, void* staging_pointer, std::size_t buffer_index);
   void activate(int expert_id, std::size_t active_buffer);
   void evict(int expert_id);
   void publishIPC(int expert_id, void* ipc_pointer);

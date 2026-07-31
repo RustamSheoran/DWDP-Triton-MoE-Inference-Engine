@@ -1,6 +1,6 @@
 BasedOnStyle: Google
 Language: Cpp
-ColumnLimit: 100
+ColumnLimit: 80
 IndentWidth: 2
 ContinuationIndentWidth: 4
 AllowShortFunctionsOnASingleLine: None
@@ -9,6 +9,9 @@ AllowShortLoopsOnASingleLine: false
 AllowShortBlocksOnASingleLine: Never
 AllowShortLambdasOnASingleLine: None
 AllowShortCaseLabelsOnASingleLine: false
+AlignAfterOpenBracket: AlwaysBreak
+BinPackParameters: false
+BinPackArguments: false
 InsertBraces: true
 BreakBeforeBraces: Attach
 SeparateDefinitionBlocks: Always

@@ -24,8 +24,8 @@ void CommunicationEngine::initialize(std::size_t staging_bytes) {
     events_.initialize(1);
     staging_.allocate(staging_bytes);
     cache_ = std::make_unique<CacheManager>(staging_bytes * 2);
-    worker_ = std::make_unique<PrefetchWorker>(weights_, *cache_, ipc_, staging_, events_,
-                                               prefetch_queue_, streams_);
+    worker_ = std::make_unique<PrefetchWorker>(
+        weights_, *cache_, ipc_, staging_, events_, prefetch_queue_, streams_);
     worker_->start();
     initialized_ = true;
   } catch (...) {
@@ -54,8 +54,8 @@ void CommunicationEngine::shutdown() noexcept {
   initialized_ = false;
 }
 
-void CommunicationEngine::registerExpert(int expert_id, void* source_device_pointer,
-                                         std::size_t size_bytes) {
+void CommunicationEngine::registerExpert(
+    int expert_id, void* source_device_pointer, std::size_t size_bytes) {
   std::scoped_lock lock(mutex_);
   if (!initialized_) {
     throw std::logic_error("CommunicationEngine is not initialized");
@@ -63,17 +63,23 @@ void CommunicationEngine::registerExpert(int expert_id, void* source_device_poin
   if (size_bytes > staging_.capacity()) {
     throw std::out_of_range("expert exceeds staging capacity");
   }
-  weights_.registerExpert(expert_id, source_device_pointer, size_bytes, events_.acquire());
+  weights_.registerExpert(
+      expert_id, source_device_pointer, size_bytes, events_.acquire());
 }
 
-void CommunicationEngine::registerIPCExpert(int expert_id, const cudaIpcMemHandle_t& handle,
-                                            std::size_t size_bytes) {
+void CommunicationEngine::registerIPCExpert(
+    int expert_id, const cudaIpcMemHandle_t& handle, std::size_t size_bytes) {
   std::scoped_lock lock(mutex_);
   if (!initialized_) {
     throw std::logic_error("CommunicationEngine is not initialized");
   }
-  weights_.registerExpert(expert_id, nullptr, size_bytes, events_.acquire(),
-                          BufferLocation::kImportedIPC, &handle);
+  weights_.registerExpert(
+      expert_id,
+      nullptr,
+      size_bytes,
+      events_.acquire(),
+      BufferLocation::kImportedIPC,
+      &handle);
 }
 
 void CommunicationEngine::prefetch(int expert_id) {
@@ -114,7 +120,8 @@ void* CommunicationEngine::getResidentPointer(int expert_id) {
   cache_->pin(expert_id);
   weights_.markAccessed(
       expert_id,
-      static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
+      static_cast<std::uint64_t>(
+          std::chrono::steady_clock::now().time_since_epoch().count()));
   return weights_.getResidentPointer(expert_id);
 }
 

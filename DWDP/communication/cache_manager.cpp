@@ -4,7 +4,8 @@
 
 namespace dwdp::communication {
 
-CacheManager::CacheManager(std::size_t capacity_bytes) : capacity_bytes_(capacity_bytes) {
+CacheManager::CacheManager(std::size_t capacity_bytes)
+    : capacity_bytes_(capacity_bytes) {
   if (capacity_bytes == 0) {
     throw std::invalid_argument("cache capacity must be non-zero");
   }

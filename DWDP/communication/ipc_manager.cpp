@@ -12,7 +12,8 @@ cudaIpcMemHandle_t IPCManager::exportExpert(const void* pointer) const {
   return ipc::exportHandle(pointer);
 }
 
-void* IPCManager::importExpert(int expert_id, const cudaIpcMemHandle_t& handle) {
+void* IPCManager::importExpert(
+    int expert_id, const cudaIpcMemHandle_t& handle) {
   std::scoped_lock lock(mutex_);
   const auto it = imported_.find(expert_id);
   if (it != imported_.end()) {
