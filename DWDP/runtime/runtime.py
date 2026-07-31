@@ -176,6 +176,41 @@ class DWDPRuntime(nn.Module):
         profiler.start()
         workspaces = self.context.workspaces
 
+        if not self.config.enable_profiling:
+            router_output = self.router(hidden_states)
+            dispatch_plan = self.dispatcher(
+                router_output,
+                workspace=workspaces.dispatch if workspaces is not None else None,
+            )
+            execution_plan = self.scheduler(
+                dispatch_plan,
+                workspace=workspaces.scheduler if workspaces is not None else None,
+            )
+            communication_plan = self.comms_planner(
+                execution_plan,
+                workspace=workspaces.comms if workspaces is not None else None,
+            )
+            executor_output = self.executor(
+                hidden_states,
+                dispatch_plan,
+                execution_plan,
+                communication_plan,
+                workspace=workspaces.executor if workspaces is not None else None,
+            )
+            merger_output = self.merger(
+                executor_output,
+                workspace=workspaces.merger if workspaces is not None else None,
+            )
+            return RuntimePipelineOutput(
+                router_output=router_output,
+                dispatch_plan=dispatch_plan,
+                execution_plan=execution_plan,
+                communication_plan=communication_plan,
+                executor_output=executor_output,
+                merger_output=merger_output,
+                profile=None,
+            )
+
         with profiler.record("router"):
             router_output = self.router(hidden_states)
         with profiler.record("dispatcher"):
