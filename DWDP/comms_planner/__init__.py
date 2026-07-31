@@ -1,7 +1,6 @@
 """Communication planning primitives for distributed MoE execution."""
 
 from .config import CommunicationMetadataLevel, CommunicationPlannerConfig
-from .context import CommunicationPlannerContext
 from .cost_model import CommunicationCostEstimate, CommunicationCostModel
 from .expert_parallel import ExpertParallelPlanner
 from .graph import CommunicationEdge, CommunicationGraph, CommunicationNode
@@ -37,7 +36,6 @@ __all__ = [
     "CommunicationNode",
     "CommunicationPlan",
     "CommunicationPlannerConfig",
-    "CommunicationPlannerContext",
     "CommunicationPlannerWorkspace",
     "CommunicationStatistics",
     "DependencyMetadata",
