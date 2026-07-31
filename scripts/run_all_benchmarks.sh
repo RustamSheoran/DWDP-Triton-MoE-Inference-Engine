@@ -14,6 +14,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 export PYTHONUNBUFFERED=1
+export MALLOC_TRIM_THRESHOLD_=100000
+export MALLOC_MMAP_THRESHOLD_=100000
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 # Auto-resolve HF_TOKEN from Google Colab userdata secrets if running in Colab

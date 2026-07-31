@@ -437,8 +437,9 @@ def benchmark(
     return metrics, text, generated.detach().cpu().tolist()
 
 
-def release(model: Any) -> None:
-    del model
+def release(model: Any = None) -> None:
+    if model is not None:
+        del model
     gc.collect()
     if torch.cuda.is_available():
         for i in range(torch.cuda.device_count()):
@@ -447,6 +448,12 @@ def release(model: Any) -> None:
                 torch.cuda.ipc_collect()
         torch.cuda.synchronize()
     gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 
 def main() -> None:
@@ -480,6 +487,7 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
+    release(None)
     print(f"\n[STEP 2/4] Loading native Hugging Face model & downloading weights ({active_quant})...", flush=True)
     hf_load_start = time.perf_counter()
     hf_model = AutoModelForCausalLM.from_pretrained(
@@ -516,6 +524,8 @@ def main() -> None:
     print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}", flush=True)
     print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}", flush=True)
     print(f"dwdp_output={dwdp_text!r}", flush=True)
+    release(dwdp_runtime)
+    dwdp_runtime = None
 
     results = {
         "model": args.model,
