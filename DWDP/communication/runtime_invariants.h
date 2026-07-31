@@ -2,7 +2,7 @@
 
 namespace dwdp::communication {
 
-inline constexpr const char *kRuntimeInvariants[] = {
+inline constexpr const char* kRuntimeInvariants[] = {
     "Executor resolves only resident pointers through CommunicationEngine.",
     "Only CommunicationEngine-owned resources create CUDA work.",
     "Every copy publication has exactly one expert completion event.",
@@ -12,4 +12,4 @@ inline constexpr const char *kRuntimeInvariants[] = {
     "Imported IPC mappings are unique per exported expert and reused.",
 };
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

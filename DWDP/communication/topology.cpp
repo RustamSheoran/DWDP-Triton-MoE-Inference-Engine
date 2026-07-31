@@ -1,8 +1,8 @@
 #include "topology.h"
 
-#include "cuda_check.h"
-
 #include <stdexcept>
+
+#include "cuda_check.h"
 
 namespace dwdp::communication {
 
@@ -40,4 +40,4 @@ bool PeerTopology::canAccess(int source, int destination) {
   return accessible != 0;
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

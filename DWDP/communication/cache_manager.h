@@ -10,7 +10,7 @@
 namespace dwdp::communication {
 
 class CacheManager final {
-public:
+ public:
   explicit CacheManager(std::size_t capacity_bytes);
   [[nodiscard]] bool contains(int expert_id) const;
   [[nodiscard]] std::size_t capacity() const noexcept;
@@ -22,7 +22,7 @@ public:
   void unpin(int expert_id);
   void erase(int expert_id);
 
-private:
+ private:
   struct Entry {
     std::size_t bytes;
     std::size_t pins;
@@ -37,4 +37,4 @@ private:
   mutable std::mutex mutex_;
 };
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

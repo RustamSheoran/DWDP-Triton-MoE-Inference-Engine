@@ -4,16 +4,15 @@
 
 namespace dwdp::communication {
 
-void TransferScheduler::transition(TransferTask &t, TransferState from,
-                                   TransferState to) {
+void TransferScheduler::transition(TransferTask& t, TransferState from, TransferState to) {
   if (t.state != from) {
     throw std::logic_error("illegal transfer transition");
   }
   t.state = to;
 }
 
-std::shared_ptr<TransferTask>
-TransferScheduler::submit(int id, int priority, std::function<void(TransferState)> cb) {
+std::shared_ptr<TransferTask> TransferScheduler::submit(int id, int priority,
+                                                        std::function<void(TransferState)> cb) {
   if (id < 0) {
     throw std::invalid_argument("invalid expert id");
   }
@@ -26,8 +25,8 @@ TransferScheduler::submit(int id, int priority, std::function<void(TransferState
       return task;
     }
   }
-  auto task = std::make_shared<TransferTask>(TransferTask{
-      id, priority, sequence_++, TransferState::kCreated, 0, std::move(cb)});
+  auto task = std::make_shared<TransferTask>(
+      TransferTask{id, priority, sequence_++, TransferState::kCreated, 0, std::move(cb)});
   transition(*task, TransferState::kCreated, TransferState::kQueued);
   coalesced_[id] = task;
   queue_.push(task);
@@ -37,7 +36,9 @@ TransferScheduler::submit(int id, int priority, std::function<void(TransferState
 
 std::optional<std::shared_ptr<TransferTask>> TransferScheduler::take() {
   std::unique_lock lock(mutex_);
-  ready_.wait(lock, [&] { return closed_ || !queue_.empty(); });
+  ready_.wait(lock, [&] {
+    return closed_ || !queue_.empty();
+  });
   if (queue_.empty()) {
     return std::nullopt;
   }
@@ -47,7 +48,7 @@ std::optional<std::shared_ptr<TransferTask>> TransferScheduler::take() {
   return task;
 }
 
-void TransferScheduler::complete(const std::shared_ptr<TransferTask> &t) {
+void TransferScheduler::complete(const std::shared_ptr<TransferTask>& t) {
   std::function<void(TransferState)> cb;
   {
     std::scoped_lock lock(mutex_);
@@ -60,7 +61,7 @@ void TransferScheduler::complete(const std::shared_ptr<TransferTask> &t) {
   }
 }
 
-void TransferScheduler::fail(const std::shared_ptr<TransferTask> &t, bool retryable) {
+void TransferScheduler::fail(const std::shared_ptr<TransferTask>& t, bool retryable) {
   std::function<void(TransferState)> cb;
   {
     std::scoped_lock lock(mutex_);
@@ -100,4 +101,4 @@ void TransferScheduler::close() {
   ready_.notify_all();
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

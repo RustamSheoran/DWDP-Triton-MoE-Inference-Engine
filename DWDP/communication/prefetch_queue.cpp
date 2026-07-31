@@ -20,7 +20,9 @@ void PrefetchQueue::enqueue(PrefetchRequest request) {
 
 std::optional<PrefetchRequest> PrefetchQueue::waitDequeue() {
   std::unique_lock lock(mutex_);
-  ready_.wait(lock, [this] { return closed_ || !queue_.empty(); });
+  ready_.wait(lock, [this] {
+    return closed_ || !queue_.empty();
+  });
   if (queue_.empty()) {
     return std::nullopt;
   }
@@ -71,4 +73,4 @@ void PrefetchQueue::reset() {
   closed_ = false;
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

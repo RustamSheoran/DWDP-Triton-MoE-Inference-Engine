@@ -1,8 +1,7 @@
-#include "streams.h"
+#include <stdexcept>
 
 #include "cuda_check.h"
-
-#include <stdexcept>
+#include "streams.h"
 
 namespace dwdp::communication {
 
@@ -91,4 +90,4 @@ bool CUDAStreamPool::initialized() const noexcept {
   return initialized_;
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

@@ -1,8 +1,7 @@
-#include "events.h"
+#include <stdexcept>
 
 #include "cuda_check.h"
-
-#include <stdexcept>
+#include "events.h"
 
 namespace dwdp::communication {
 
@@ -32,11 +31,11 @@ void CUDAEventPool::initialize(std::size_t count) {
   DWDP_CUDA_CHECK(cudaSetDevice(device_id_));
   try {
     events_.resize(count, nullptr);
-    for (auto &event : events_) {
+    for (auto& event : events_) {
       DWDP_CUDA_CHECK(cudaEventCreateWithFlags(&event, cudaEventDisableTiming));
     }
   } catch (...) {
-    for (auto &event : events_) {
+    for (auto& event : events_) {
       if (event != nullptr) {
         cudaEventDestroy(event);
       }
@@ -76,7 +75,7 @@ void CUDAEventPool::shutdown() noexcept {
   int previous_device = 0;
   cudaGetDevice(&previous_device);
   cudaSetDevice(device_id_);
-  for (auto &event : events_) {
+  for (auto& event : events_) {
     if (event != nullptr) {
       cudaEventDestroy(event);
     }
@@ -114,4 +113,4 @@ void CUDAEventPool::validateIndex(std::size_t index) const {
   }
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

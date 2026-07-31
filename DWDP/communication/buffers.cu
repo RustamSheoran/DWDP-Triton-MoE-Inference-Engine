@@ -1,8 +1,7 @@
-#include "buffers.h"
-
-#include "cuda_check.h"
-
 #include <stdexcept>
+
+#include "buffers.h"
+#include "cuda_check.h"
 
 namespace dwdp::communication {
 
@@ -49,7 +48,7 @@ void DoubleBufferedStaging::allocate(std::size_t bytes) {
   DWDP_CUDA_CHECK(cudaSetDevice(previous_device));
 }
 
-void *DoubleBufferedStaging::current() const {
+void* DoubleBufferedStaging::current() const {
   std::scoped_lock lock(mutex_);
   if (buffers_[current_index_] == nullptr) {
     throw std::logic_error("staging buffers are not allocated");
@@ -57,7 +56,7 @@ void *DoubleBufferedStaging::current() const {
   return buffers_[current_index_];
 }
 
-void *DoubleBufferedStaging::next() const {
+void* DoubleBufferedStaging::next() const {
   std::scoped_lock lock(mutex_);
   const auto next_index = 1U - current_index_;
   if (buffers_[next_index] == nullptr) {
@@ -79,7 +78,7 @@ void DoubleBufferedStaging::free() noexcept {
   int previous_device = 0;
   cudaGetDevice(&previous_device);
   cudaSetDevice(device_id_);
-  for (auto &buffer : buffers_) {
+  for (auto& buffer : buffers_) {
     if (buffer != nullptr) {
       cudaFree(buffer);
     }
@@ -90,7 +89,7 @@ void DoubleBufferedStaging::free() noexcept {
   current_index_ = 0;
 }
 
-void DoubleBufferedStaging::copyToNextAsync(const void *source, std::size_t bytes,
+void DoubleBufferedStaging::copyToNextAsync(const void* source, std::size_t bytes,
                                             cudaMemcpyKind kind, cudaStream_t stream) {
   if (source == nullptr) {
     throw std::invalid_argument("copy source must be non-null");
@@ -121,4 +120,4 @@ std::size_t DoubleBufferedStaging::nextIndex() const noexcept {
   return 1U - current_index_;
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

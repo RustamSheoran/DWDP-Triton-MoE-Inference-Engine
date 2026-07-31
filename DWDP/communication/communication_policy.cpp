@@ -2,8 +2,7 @@
 
 namespace dwdp::communication {
 
-CommunicationDecision CommunicationPolicy::decide(const ExpertRecord &r,
-                                                  bool peer_access) const {
+CommunicationDecision CommunicationPolicy::decide(const ExpertRecord& r, bool peer_access) const {
   if (r.state == ResidentState::kActive || r.state == ResidentState::kStaged) {
     return {CommunicationPath::kLocal};
   }
@@ -16,4 +15,4 @@ CommunicationDecision CommunicationPolicy::decide(const ExpertRecord &r,
   return {CommunicationPath::kCopy};
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

@@ -24,8 +24,8 @@ void CommunicationEngine::initialize(std::size_t staging_bytes) {
     events_.initialize(1);
     staging_.allocate(staging_bytes);
     cache_ = std::make_unique<CacheManager>(staging_bytes * 2);
-    worker_ = std::make_unique<PrefetchWorker>(weights_, *cache_, ipc_, staging_,
-                                               events_, prefetch_queue_, streams_);
+    worker_ = std::make_unique<PrefetchWorker>(weights_, *cache_, ipc_, staging_, events_,
+                                               prefetch_queue_, streams_);
     worker_->start();
     initialized_ = true;
   } catch (...) {
@@ -54,7 +54,7 @@ void CommunicationEngine::shutdown() noexcept {
   initialized_ = false;
 }
 
-void CommunicationEngine::registerExpert(int expert_id, void *source_device_pointer,
+void CommunicationEngine::registerExpert(int expert_id, void* source_device_pointer,
                                          std::size_t size_bytes) {
   std::scoped_lock lock(mutex_);
   if (!initialized_) {
@@ -63,12 +63,10 @@ void CommunicationEngine::registerExpert(int expert_id, void *source_device_poin
   if (size_bytes > staging_.capacity()) {
     throw std::out_of_range("expert exceeds staging capacity");
   }
-  weights_.registerExpert(expert_id, source_device_pointer, size_bytes,
-                          events_.acquire());
+  weights_.registerExpert(expert_id, source_device_pointer, size_bytes, events_.acquire());
 }
 
-void CommunicationEngine::registerIPCExpert(int expert_id,
-                                            const cudaIpcMemHandle_t &handle,
+void CommunicationEngine::registerIPCExpert(int expert_id, const cudaIpcMemHandle_t& handle,
                                             std::size_t size_bytes) {
   std::scoped_lock lock(mutex_);
   if (!initialized_) {
@@ -91,7 +89,7 @@ void CommunicationEngine::wait(int expert_id) {
   events_.wait(weights_.copyEventIndex(expert_id), streams_.compute());
 }
 
-void *CommunicationEngine::getWeight(int expert_id) const {
+void* CommunicationEngine::getWeight(int expert_id) const {
   return weights_.getDevicePointer(expert_id);
 }
 
@@ -100,13 +98,14 @@ bool CommunicationEngine::isResident(int expert_id) const {
   return record.resident && record.buffer_index == staging_.currentIndex();
 }
 
-void *CommunicationEngine::getResidentPointer(int expert_id) {
+void* CommunicationEngine::getResidentPointer(int expert_id) {
   const auto record = weights_.waitForResident(expert_id);
   if (!record.ipc_imported) {
     events_.wait(record.copy_event_index, streams_.compute());
     if (record.buffer_index != staging_.currentIndex()) {
-      throw std::logic_error("expert is resident in next buffer; call "
-                             "swapBuffers after prior compute");
+      throw std::logic_error(
+          "expert is resident in next buffer; call "
+          "swapBuffers after prior compute");
     }
     if (record.state == ResidentState::kStaged) {
       weights_.activate(expert_id, staging_.currentIndex());
@@ -114,8 +113,8 @@ void *CommunicationEngine::getResidentPointer(int expert_id) {
   }
   cache_->pin(expert_id);
   weights_.markAccessed(
-      expert_id, static_cast<std::uint64_t>(
-                     std::chrono::steady_clock::now().time_since_epoch().count()));
+      expert_id,
+      static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()));
   return weights_.getResidentPointer(expert_id);
 }
 
@@ -133,11 +132,11 @@ void CommunicationEngine::release(int expert_id) {
   weights_.release(expert_id);
 }
 
-WeightManager &CommunicationEngine::weights() noexcept {
+WeightManager& CommunicationEngine::weights() noexcept {
   return weights_;
 }
 
-const WeightManager &CommunicationEngine::weights() const noexcept {
+const WeightManager& CommunicationEngine::weights() const noexcept {
   return weights_;
 }
 
@@ -145,4 +144,4 @@ bool CommunicationEngine::initialized() const noexcept {
   return initialized_;
 }
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication

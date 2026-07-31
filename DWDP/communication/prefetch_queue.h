@@ -13,7 +13,7 @@ struct PrefetchRequest {
 };
 
 class PrefetchQueue final {
-public:
+ public:
   void enqueue(PrefetchRequest request);
   [[nodiscard]] std::optional<PrefetchRequest> dequeue();
   [[nodiscard]] std::optional<PrefetchRequest> waitDequeue();
@@ -23,11 +23,11 @@ public:
   void reset();
   void close();
 
-private:
+ private:
   mutable std::mutex mutex_;
   std::condition_variable ready_;
   std::queue<PrefetchRequest> queue_;
   bool closed_{false};
 };
 
-} // namespace dwdp::communication
+}  // namespace dwdp::communication
