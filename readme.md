@@ -8,9 +8,9 @@ DWDP is an inference-oriented, high-performance Mixture-of-Experts (MoE) engine.
 
 - **Storage-Preserving MoE Engine**: Preserves the established pipeline (*Router → Dispatcher → Scheduler → Communication Planner → Communication Engine → Executor → Merger*) without duplicating model weight storage.
 - **Native FP8 Precision & Micro-Scaling**: Full FP8 (E4M3 / E5M2) execution with fine-grained per-expert micro-scale factors and FP32 Tensor Core accumulation.
-- **Persistent Pointer-Array Triton Kernels**: Fused gather-SwiGLU and down-projection Triton kernels consuming direct [TensorList](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/tensor_list.py) arrays of non-contiguous virtual memory pointers.
+- **Persistent Pointer-Array Triton Kernels**: Fused gather-SwiGLU and down-projection Triton kernels consuming direct [TensorList](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/tensor_list.py) arrays of non-contiguous virtual memory pointers.
 - **Async NVLink Prefetching & CUDA IPC**: C++20/CUDA communication engine with double-buffered physical staging areas (Buffer A/B), dedicated high-priority prefetch streams, and zero-copy CUDA IPC handles.
-- **One-Command Benchmarking & Profiling**: Automated master launcher script ([run_all_benchmarks.sh](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/scripts/run_all_benchmarks.sh)) running FP8 benchmarks, PyTorch Profiler traces, prefill/decode breakdowns, and packaging results into downloadable `.zip` archives.
+- **One-Command Benchmarking & Profiling**: Automated master launcher script ([run_all_benchmarks.sh](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/run_all_benchmarks.sh)) running FP8 benchmarks, PyTorch Profiler traces, prefill/decode breakdowns, and packaging results into downloadable `.zip` archives.
 
 ---
 
@@ -36,21 +36,21 @@ The dispatcher produces one contiguous expert-major assignment stream. The sched
 
 ## 🗂️ Interactive Repository & Documentation Map
 
-Click any link below to directly open the corresponding codebase module or architectural documentation:
+Click any link below to directly navigate to the corresponding GitHub file or documentation page:
 
 | Module / Component | Implementation Code | Architectural Documentation |
 | :--- | :--- | :--- |
-| **Router** | [DWDP/router](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/router) | 📖 [router.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/router.md) |
-| **Dispatcher** | [DWDP/dispatcher](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/dispatcher) | 📖 [dispatcher.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/dispatcher.md) |
-| **Scheduler** | [DWDP/scheduler](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/scheduler) | 📖 [scheduler.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/scheduler.md) |
-| **Communication Planner** | [DWDP/comms_planner](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/comms_planner) | 📖 [comms_planner.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/comms_planner.md) |
-| **CUDA Communication Engine** | [DWDP/communication](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/communication) | 📖 [buffers.h](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/communication/buffers.h) / [ipc.h](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/communication/ipc.h) |
-| **Triton FP8 Executor** | [DWDP/executor](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor) | 📖 [executor.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/executor.md) |
-| **Merger** | [DWDP/merger](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/merger) | 📖 [merger.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/merger.md) |
-| **Runtime Orchestrator** | [DWDP/runtime](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/runtime) | 📖 [runtime.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/runtime.md) |
-| **Hugging Face Adapters** | [DWDP/adapters](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/adapters) | 📖 [adapters.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/adapters.md) |
-| **Benchmarking Suite** | [scripts/](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/scripts) / [benchmarks/](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks) | 📖 [BENCHMARK_GUIDE.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/BENCHMARK_GUIDE.md) |
-| **Proof-of-Work Results** | [results/](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/results) | 📊 [latest_fp8_report.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/results/latest_fp8_report.md) |
+| **Router** | [DWDP/router](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/router) | 📖 [router.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/router.md) |
+| **Dispatcher** | [DWDP/dispatcher](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/dispatcher) | 📖 [dispatcher.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/dispatcher.md) |
+| **Scheduler** | [DWDP/scheduler](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/scheduler) | 📖 [scheduler.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/scheduler.md) |
+| **Communication Planner** | [DWDP/comms_planner](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/comms_planner) | 📖 [comms_planner.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/comms_planner.md) |
+| **CUDA Communication Engine** | [DWDP/communication](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/communication) | 📖 [buffers.h](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/communication/buffers.h) / [ipc.h](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/communication/ipc.h) |
+| **Triton FP8 Executor** | [DWDP/executor](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/executor) | 📖 [executor.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/executor.md) |
+| **Merger** | [DWDP/merger](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/merger) | 📖 [merger.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/merger.md) |
+| **Runtime Orchestrator** | [DWDP/runtime](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/runtime) | 📖 [runtime.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/runtime.md) |
+| **Hugging Face Adapters** | [DWDP/adapters](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/adapters) | 📖 [adapters.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/adapters.md) |
+| **Benchmarking Suite** | [scripts/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/scripts) / [benchmarks/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/benchmarks) | 📖 [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md) |
+| **Proof-of-Work Results** | [results/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/results) | 📊 [latest_fp8_report.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/results/latest_fp8_report.md) |
 
 ---
 
@@ -65,30 +65,30 @@ bash scripts/run_all_benchmarks.sh
 ### What this command does:
 1. Validates CUDA GPU hardware and PyTorch FP8 capabilities.
 2. Installs required dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
-3. Runs FP8 model execution (`--quantization fp8`) via [benchmark_colab.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
-4. Packages results into `DWDP_FP8_Benchmark_Results_<timestamp>.zip` in the root directory and updates [latest_fp8_report.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/results/latest_fp8_report.md).
+3. Runs FP8 model execution (`--quantization fp8`) via [benchmark_colab.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
+4. Packages results into `DWDP_FP8_Benchmark_Results_<timestamp>.zip` in the root directory and updates [latest_fp8_report.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/results/latest_fp8_report.md).
 
-For customization options (e.g. running on A100/H100/L4 GPUs, changing batch sizes, or testing other models like Mixtral or DeepSeek), click to open the [BENCHMARK_GUIDE.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/BENCHMARK_GUIDE.md).
+For customization options (e.g. running on A100/H100/L4 GPUs, changing batch sizes, or testing other models like Mixtral or DeepSeek), see [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md).
 
 ---
 
 ## ⚡ Component Benchmarks
 
-You can run individual stage benchmarks directly from the [benchmarks/](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks) folder:
+You can run individual stage benchmarks directly from the [benchmarks/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/benchmarks) folder:
 
-- **Executor Benchmark**: [benchmark_executor.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks/benchmark_executor.py)
+- **Executor Benchmark**: [benchmark_executor.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/benchmarks/benchmark_executor.py)
   ```bash
   python benchmarks/benchmark_executor.py --device cuda
   ```
-- **Dispatcher Benchmark**: [benchmark_dispatcher.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks/benchmark_dispatcher.py)
+- **Dispatcher Benchmark**: [benchmark_dispatcher.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/benchmarks/benchmark_dispatcher.py)
   ```bash
   python benchmarks/benchmark_dispatcher.py --device cuda
   ```
-- **Router Benchmark**: [benchmark_router.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks/benchmark_router.py)
+- **Router Benchmark**: [benchmark_router.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/benchmarks/benchmark_router.py)
   ```bash
   python benchmarks/benchmark_router.py --device cuda
   ```
-- **Scheduler Benchmark**: [benchmark_scheduler.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/benchmarks/benchmark_scheduler.py)
+- **Scheduler Benchmark**: [benchmark_scheduler.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/benchmarks/benchmark_scheduler.py)
   ```bash
   python benchmarks/benchmark_scheduler.py --device cuda
   ```
