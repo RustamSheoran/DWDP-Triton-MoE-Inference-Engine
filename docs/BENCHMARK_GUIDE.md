@@ -22,7 +22,7 @@ bash scripts/run_all_benchmarks.sh
    - **Decode Throughput** ($\text{tokens/sec}$)
    - **Peak VRAM Allocation**
    - **Torch Profiler Operator Breakdown** (categorizing router, dispatcher, scheduler, gather, and GEMM kernel times)
-5. **Artifact Zip & Packaging**: Creates a timestamped `.zip` archive (e.g., `DWDP_FP8_Benchmark_Results_2026-07-31_10-00-00.zip`) in the project root directory and copies the latest markdown report to `results/latest_fp8_report.md`.
+5. **Artifact Zip & Packaging**: Creates a timestamped `.zip` archive (e.g., `DWDP_FP8_Benchmark_Results_2026-07-31_10-00-00.zip`) in the project root directory containing the timestamped results folder.
 
 ---
 
@@ -76,7 +76,7 @@ After running `bash scripts/run_all_benchmarks.sh`:
 
 1. **Locate Artifacts**:
    - Main Zip file: `DWDP_FP8_Benchmark_Results_<timestamp>.zip` (in root directory).
-   - Markdown report: `results/latest_fp8_report.md`.
+   - Timestamped folder: `results/fp8_run_<timestamp>/`.
 2. **Download Artifact**:
    - Download the generated `.zip` file from your cloud/Colab environment to your local machine.
 3. **Commit & Push to Git**:
@@ -85,6 +85,7 @@ After running `bash scripts/run_all_benchmarks.sh`:
    git commit -m "docs: add FP8 benchmark & profiling results for Qwen1.5-MoE"
    git push origin main
    ```
+
 
 ---
 

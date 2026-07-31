@@ -50,23 +50,40 @@ Click any link below to directly navigate to the corresponding GitHub file or do
 | **Runtime Orchestrator** | [DWDP/runtime](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/runtime) | 📖 [runtime.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/runtime.md) |
 | **Hugging Face Adapters** | [DWDP/adapters](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/DWDP/adapters) | 📖 [adapters.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/adapters.md) |
 | **Benchmarking Suite** | [scripts/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/scripts) / [benchmarks/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/benchmarks) | 📖 [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md) |
-| **Proof-of-Work Results** | [results/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/results) | 📊 [latest_fp8_report.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/results/latest_fp8_report.md) |
+| **Proof-of-Work Results** | [results/](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/tree/main/results) | 📊 Timestamped Run Folders |
 
 ---
 
-## 💻 Quick Start (Automated FP8 Benchmark & Profiling)
+## ☁️ Running on Google Colab
 
-Run the full automated FP8 benchmark and profiling suite for `Qwen1.5-MoE-A2.7B` with one command:
+To run the automated FP8 benchmark directly in a Google Colab notebook cell:
+
+```python
+# 1. Clone the repository into Google Colab
+!git clone https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git
+
+# 2. Change working directory to the repo root
+%cd DWDP-Triton-MoE-Inference-Engine
+
+# 3. Launch the one-command FP8 benchmark & profiling suite
+!bash scripts/run_all_benchmarks.sh
+```
+
+---
+
+## 💻 Local Quick Start
+
+Run the full automated FP8 benchmark and profiling suite locally with one command:
 
 ```bash
 bash scripts/run_all_benchmarks.sh
 ```
 
-### What this command does:
-1. Validates CUDA GPU hardware and PyTorch FP8 capabilities.
-2. Installs required dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
+### What this command automatically does:
+1. Validates GPU hardware (`nvidia-smi`) and PyTorch CUDA FP8 capabilities.
+2. Auto-installs all required dependencies (`transformers`, `accelerate`, `bitsandbytes`, `triton`, `safetensors`, `zip`).
 3. Runs FP8 model execution (`--quantization fp8`) via [benchmark_colab.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/benchmark_colab.py) and measures prefill latency, decode latency, throughput ($\text{tokens/sec}$), peak VRAM, and PyTorch Profiler traces.
-4. Packages results into `DWDP_FP8_Benchmark_Results_<timestamp>.zip` in the root directory and updates [latest_fp8_report.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/results/latest_fp8_report.md).
+4. Bundles all benchmark results into a timestamped archive (`DWDP_FP8_Benchmark_Results_<timestamp>.zip`) directly in the main project directory for easy download.
 
 For customization options (e.g. running on A100/H100/L4 GPUs, changing batch sizes, or testing other models like Mixtral or DeepSeek), see [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md).
 

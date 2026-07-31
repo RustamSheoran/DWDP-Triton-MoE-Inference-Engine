@@ -138,19 +138,13 @@ cp "${TEMP_LOG}" "${RESULTS_DIR}/benchmark.log"
 echo "[INFO] Packaging benchmark results into ZIP archive..."
 cd -- "${REPO_ROOT}"
 
-# Copy latest report to main results root for easy inspection
-mkdir -p "${REPO_ROOT}/results"
-if [[ -f "${RESULTS_DIR}/report.md" ]]; then
-  cp "${RESULTS_DIR}/report.md" "${REPO_ROOT}/results/latest_fp8_report.md"
-fi
-
 if command -v zip >/dev/null 2>&1; then
   zip -r -q "${ZIP_NAME}" "results/$(basename "${RESULTS_DIR}")"
   echo "================================================================="
   echo " SUCCESS: FP8 Benchmark Completed & Packaged!"
   echo "================================================================="
   echo " Zip Archive Created: ${ZIP_PATH}"
-  echo " Latest Markdown Report: ${REPO_ROOT}/results/latest_fp8_report.md"
+  echo " Benchmark Folder:   ${RESULTS_DIR}"
   echo "================================================================="
 else
   echo "[WARNING] zip utility not available. Results saved in ${RESULTS_DIR}"
