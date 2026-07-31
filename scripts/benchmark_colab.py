@@ -172,9 +172,9 @@ def check_vram_and_select_precision(
 
 
 def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
+    # PyTorch does not support float8_e4m3fn as default loading storage on CPU.
+    # Framework weights are loaded in float16, then quantized into FP8/4bit by DWDP/bitsandbytes.
     target_dtype = torch.float16
-    if mode == "fp8":
-        target_dtype = getattr(torch, "float8_e4m3fn", torch.float16)
     kwargs: dict[str, Any] = {
         "device_map": "auto",
         "dtype": target_dtype,
