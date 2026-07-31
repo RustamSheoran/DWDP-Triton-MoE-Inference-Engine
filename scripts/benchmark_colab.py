@@ -272,15 +272,16 @@ def profile_generation(
     if torch.cuda.is_available():
         activities.append(torch.profiler.ProfilerActivity.CUDA)
     inputs = make_inputs(tokenizer, model, args.prompt, args)
+    profile_tokens = min(args.max_new_tokens, 16)
     with (
         torch.inference_mode(),
         torch.profiler.profile(
             activities=activities,
             record_shapes=False,
-            profile_memory=True,
+            profile_memory=False,
         ) as profiler,
     ):
-        model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
+        model.generate(**inputs, max_new_tokens=profile_tokens, do_sample=False)
 
     categories = {
         "python_orchestration": ("dwdp.python_orchestration",),
