@@ -127,6 +127,20 @@ class DWDPMoEBlock(nn.Module):
 
         del args, kwargs
         workspaces = self.context.workspaces
+        # Stream-Overlapped Shared Expert Execution
+        shared_output = None
+        if self.shared_expert is not None and torch.cuda.is_available():
+            if not hasattr(self, "_shared_stream"):
+                self._shared_stream = torch.cuda.Stream()
+            with torch.cuda.stream(self._shared_stream):
+                shared_output = self.shared_expert(hidden_states)
+                if self.shared_expert_gate is not None:
+                    shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
+        elif self.shared_expert is not None:
+            shared_output = self.shared_expert(hidden_states)
+            if self.shared_expert_gate is not None:
+                shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
+
         if not self.config.enable_profiling:
             router_output = self.router(hidden_states)
             dispatch_plan = self.dispatcher(
@@ -185,11 +199,10 @@ class DWDPMoEBlock(nn.Module):
                 )
         output = merger_output.hidden_states
 
-        if self.shared_expert is not None:
-            shared = self.shared_expert(hidden_states)
-            if self.shared_expert_gate is not None:
-                shared = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared
-            output = output + shared
+        if shared_output is not None:
+            if hasattr(self, "_shared_stream") and torch.cuda.is_available():
+                torch.cuda.current_stream().wait_stream(self._shared_stream)
+            output = output + shared_output
 
         if self.returns_router_logits:
             return output, router_output.router_logits

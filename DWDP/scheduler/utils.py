@@ -37,18 +37,24 @@ def make_execution_batches(
 
     from .execution import ExecutionBatch
 
-    batches = []
-    for idx in range(expert_queue.numel()):
-        batches.append(
-            ExecutionBatch(
-                expert_id=int(expert_queue[idx].item()),
-                start=int(expert_starts[idx].item()),
-                end=int(expert_ends[idx].item()),
-                count=int(expert_counts[idx].item()),
-                priority=int(execution_priority[idx].item()),
-                stream_id=int(stream_assignments[idx].item()),
-            )
+    q_list = expert_queue.tolist()
+    s_list = expert_starts.tolist()
+    e_list = expert_ends.tolist()
+    c_list = expert_counts.tolist()
+    p_list = execution_priority.tolist()
+    st_list = stream_assignments.tolist()
+
+    batches = [
+        ExecutionBatch(
+            expert_id=int(q_list[idx]),
+            start=int(s_list[idx]),
+            end=int(e_list[idx]),
+            count=int(c_list[idx]),
+            priority=int(p_list[idx]),
+            stream_id=int(st_list[idx]),
         )
+        for idx in range(len(q_list))
+    ]
     return tuple(batches)
 
 

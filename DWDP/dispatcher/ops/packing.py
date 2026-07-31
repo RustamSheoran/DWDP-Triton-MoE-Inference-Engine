@@ -11,8 +11,8 @@ def pack_token_indices(
     """Convert flattened assignment permutation into token indices."""
 
     if out is None:
-        return torch.floor_divide(token_permutation, top_k)
-    torch.floor_divide(token_permutation, top_k, out=out)
+        return token_permutation // top_k
+    torch.div(token_permutation, top_k, rounding_mode="floor", out=out)
     return out
 
 

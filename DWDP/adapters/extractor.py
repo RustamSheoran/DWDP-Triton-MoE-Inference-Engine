@@ -55,7 +55,9 @@ def discover_qwen_moe_layers(model: nn.Module) -> tuple[MoELayerSpec, ...]:
     config = getattr(model, "config", None)
     specs: list[MoELayerSpec] = []
     for name, module in model.named_modules():
-        if not name or not _looks_like_qwen_moe(module):
+        if not name or not any(k in name for k in ("mlp", "moe", "block", "layer")):
+            continue
+        if not _looks_like_qwen_moe(module):
             continue
         gate = getattr(module, "gate")
         experts = getattr(module, "experts")

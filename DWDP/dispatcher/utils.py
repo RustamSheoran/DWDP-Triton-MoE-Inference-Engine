@@ -50,7 +50,11 @@ def flatten_router_output(
     token_shape = tuple(topk_indices.shape[:-1])
     num_tokens = topk_indices.numel() // top_k
 
-    flat_expert_indices = topk_indices.reshape(-1).to(dtype=torch.int64)
+    flat_expert_indices = (
+        topk_indices.reshape(-1)
+        if topk_indices.dtype == torch.int64
+        else topk_indices.reshape(-1).to(dtype=torch.int64)
+    )
     flat_routing_weights = topk_weights.reshape(-1)
     return flat_expert_indices, flat_routing_weights, num_tokens, top_k, token_shape
 

@@ -41,11 +41,12 @@ def compare_outputs(
     diff = (reference - actual).abs()
     denom = reference.abs().clamp_min(1e-12)
     rel = diff / denom
+    allclose = bool((diff <= (atol + rtol * reference.abs())).all().item()) if diff.numel() else True
     return AdapterTensorComparison(
         max_abs_error=float(diff.max().item()) if diff.numel() else 0.0,
         mean_abs_error=float(diff.mean().item()) if diff.numel() else 0.0,
         max_relative_error=float(rel.max().item()) if rel.numel() else 0.0,
-        allclose=bool(torch.allclose(reference, actual, rtol=rtol, atol=atol)),
+        allclose=allclose,
     )
 
 

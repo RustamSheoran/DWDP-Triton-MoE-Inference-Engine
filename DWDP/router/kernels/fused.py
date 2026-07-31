@@ -22,16 +22,16 @@ def reference_topk_routing(
     the public router API.
     """
 
-    probabilities = stable_softmax(
+    topk_logits, topk_indices = select_topk(
         router_logits,
+        top_k=top_k,
+        sorted=topk_sorted,
+    )
+    topk_probabilities = stable_softmax(
+        topk_logits,
         dim=-1,
         compute_dtype=softmax_dtype,
         output_dtype=probability_dtype,
-    )
-    topk_probabilities, topk_indices = select_topk(
-        probabilities,
-        top_k=top_k,
-        sorted=topk_sorted,
     )
 
     if renormalize:
@@ -39,4 +39,4 @@ def reference_topk_routing(
     else:
         topk_weights = topk_probabilities
 
-    return probabilities, topk_indices, topk_weights
+    return topk_probabilities, topk_indices, topk_weights

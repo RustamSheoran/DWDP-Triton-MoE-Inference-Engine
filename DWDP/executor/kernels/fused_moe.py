@@ -148,9 +148,12 @@ def fused_moe(
     BLOCK_SIZE_M = 16
     BLOCK_SIZE_N = 64
     BLOCK_SIZE_K = 32
+    max_tokens_per_expert = int(expert_counts.max().item()) if expert_counts.numel() > 0 else 0
+    if max_tokens_per_expert == 0:
+        return output
 
     grid = (
-        triton.cdiv(num_tokens * top_k, BLOCK_SIZE_M),
+        triton.cdiv(max_tokens_per_expert, BLOCK_SIZE_M),
         num_experts,
     )
 

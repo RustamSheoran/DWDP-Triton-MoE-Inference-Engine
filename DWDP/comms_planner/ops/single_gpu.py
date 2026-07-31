@@ -10,8 +10,12 @@ def classify_single_gpu_experts(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Classify all scheduled experts as local for single-GPU execution."""
 
-    remote_expert_ids = torch.empty(0, dtype=torch.int64, device=expert_queue.device)
-    return expert_queue, remote_expert_ids
+    if not hasattr(classify_single_gpu_experts, "_empty_cache"):
+        classify_single_gpu_experts._empty_cache = {}
+    key = (expert_queue.device.type, expert_queue.device.index)
+    if key not in classify_single_gpu_experts._empty_cache:
+        classify_single_gpu_experts._empty_cache[key] = torch.empty(0, dtype=torch.int64, device=expert_queue.device)
+    return expert_queue, classify_single_gpu_experts._empty_cache[key]
 
 
 def empty_graph_tensors(

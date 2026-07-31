@@ -50,7 +50,7 @@ class RuntimeProfiler:
         """Start total runtime timing."""
 
         self._records.clear()
-        self._start_time = time.perf_counter() if self.enabled else None
+        self._start_time = time.perf_counter_ns() if self.enabled else None
 
     @contextmanager
     def record(self, name: str) -> Iterator[None]:
@@ -59,12 +59,12 @@ class RuntimeProfiler:
         if not self.enabled:
             yield
             return
-        start = time.perf_counter()
+        start = time.perf_counter_ns()
         try:
             yield
         finally:
             self._records.append(
-                ModuleProfile(name, (time.perf_counter() - start) * 1e6)
+                ModuleProfile(name, (time.perf_counter_ns() - start) / 1000.0)
             )
 
     def finish(self, workspace_bytes: int = 0) -> RuntimeProfile | None:
@@ -72,7 +72,7 @@ class RuntimeProfiler:
 
         if not self.enabled or self._start_time is None:
             return None
-        total = (time.perf_counter() - self._start_time) * 1e6
+        total = (time.perf_counter_ns() - self._start_time) / 1000.0
         return RuntimeProfile(
             module_profiles=tuple(self._records),
             total_duration_us=total,

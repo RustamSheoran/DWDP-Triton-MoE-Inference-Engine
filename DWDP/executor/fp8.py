@@ -65,7 +65,7 @@ def quantize_activations_once(
         max_val = source.abs().max().clamp(min=1e-5)
         scale = max_val / fp8_max
         scale_out.copy_(scale)
-        destination.copy_((source / scale).to(dtype=destination.dtype))
+        destination.copy_(source / scale)
     else:
         # copy_ performs conversion directly into reusable destination storage
         destination.copy_(source)

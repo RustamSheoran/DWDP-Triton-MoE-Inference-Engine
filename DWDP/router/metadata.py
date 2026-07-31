@@ -46,10 +46,12 @@ def build_routing_metadata(
     num_tokens, top_k = topk_indices.shape
     flat_expert_indices = topk_indices.reshape(-1)
     tokens_per_expert = torch.bincount(flat_expert_indices, minlength=num_experts)
-    expert_offsets = torch.cat(
-        (tokens_per_expert.new_zeros(1), tokens_per_expert.cumsum(dim=0)),
-        dim=0,
+    expert_offsets = torch.zeros(
+        num_experts + 1,
+        dtype=tokens_per_expert.dtype,
+        device=tokens_per_expert.device,
     )
+    expert_offsets[1:] = torch.cumsum(tokens_per_expert, dim=0)
 
     metadata = RoutingMetadata(
         num_tokens=num_tokens,

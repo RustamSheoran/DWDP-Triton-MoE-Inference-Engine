@@ -35,7 +35,7 @@ def build_round_robin_schedule(
         expert_starts = expert_offsets.index_select(0, active_experts)
         expert_ends = expert_offsets.index_select(0, active_experts + 1)
         active_counts = expert_counts.index_select(0, active_experts)
-        execution_priority = execution_order.clone()
+        execution_priority = execution_order
         stream_assignments = torch.remainder(execution_order, stream_count)
         return (
             execution_order,

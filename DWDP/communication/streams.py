@@ -67,6 +67,8 @@ class CudaStreams:
         different CUDA device is rejected.
         """
 
+        if self.initialized:
+            return True
         resolved = torch.device(device)
         if not self._enabled or resolved.type != "cuda":
             return False
