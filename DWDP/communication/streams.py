@@ -71,10 +71,14 @@ class CudaStreams:
         if not self._enabled or resolved.type != "cuda":
             return False
         if not torch.cuda.is_available():
-            raise RuntimeError("CUDA streams requested for a CUDA device, but CUDA is unavailable")
+            raise RuntimeError(
+                "CUDA streams requested for a CUDA device, but CUDA is unavailable"
+            )
 
         # Explicitly resolve the index so cuda and cuda:0 compare equally.
-        index = torch.cuda.current_device() if resolved.index is None else resolved.index
+        index = (
+            torch.cuda.current_device() if resolved.index is None else resolved.index
+        )
         resolved = torch.device("cuda", index)
         if self._device is not None and self._device != resolved:
             raise RuntimeError(
@@ -94,7 +98,9 @@ class CudaStreams:
 
         stream = self._copy_stream if role is StreamRole.COPY else self._compute_stream
         if stream is None:
-            raise RuntimeError("CUDA streams are not initialized; call ensure(cuda_device) first")
+            raise RuntimeError(
+                "CUDA streams are not initialized; call ensure(cuda_device) first"
+            )
         return stream
 
     @property

@@ -52,7 +52,6 @@ if TRITON_AVAILABLE:
         row = tile_counts + tile_id * tile_count_stride
         tl.atomic_add(row + expert_ids, 1, mask=mask, sem="relaxed")
 
-
     @triton.jit
     def _tile_local_start_kernel(
         tile_counts,
@@ -69,7 +68,6 @@ if TRITON_AVAILABLE:
         counts = tl.load(row + experts, mask=mask, other=0)
         starts = tl.cumsum(counts, axis=0) - counts
         tl.store(row + experts, starts, mask=mask)
-
 
     @triton.jit
     def _stable_tile_pack_kernel(
@@ -97,7 +95,9 @@ if TRITON_AVAILABLE:
         source_base = tile_id * tile_size
         source_positions = source_base + lanes
         source_mask = source_positions < num_assignments
-        expert_ids = tl.load(expert_indices + source_positions, mask=source_mask, other=0)
+        expert_ids = tl.load(
+            expert_indices + source_positions, mask=source_mask, other=0
+        )
 
         # The lane suffix makes all valid keys unique. Sorting keys therefore
         # groups by expert and preserves source order inside each group.
@@ -129,8 +129,12 @@ if TRITON_AVAILABLE:
         weights = tl.load(routing_weights + sorted_positions, mask=valid, other=0.0)
         token_ids = sorted_positions // top_k
 
-        tl.store(token_permutation + destination_positions, sorted_positions, mask=valid)
-        tl.store(inverse_permutation + sorted_positions, destination_positions, mask=valid)
+        tl.store(
+            token_permutation + destination_positions, sorted_positions, mask=valid
+        )
+        tl.store(
+            inverse_permutation + sorted_positions, destination_positions, mask=valid
+        )
         tl.store(packed_expert_ids + destination_positions, sorted_experts, mask=valid)
         tl.store(packed_token_indices + destination_positions, token_ids, mask=valid)
         tl.store(packed_routing_weights + destination_positions, weights, mask=valid)
@@ -144,7 +148,9 @@ def _require_triton_cuda(flat_expert_indices: torch.Tensor) -> None:
     if flat_expert_indices.dtype != torch.int64:
         raise RuntimeError("Triton dispatcher requires int64 expert indices")
     if not flat_expert_indices.is_contiguous():
-        raise RuntimeError("Triton dispatcher requires contiguous flattened expert indices")
+        raise RuntimeError(
+            "Triton dispatcher requires contiguous flattened expert indices"
+        )
 
 
 def _assignment_buffers(
@@ -174,14 +180,20 @@ def _assignment_buffers(
             torch.empty(num_assignments, dtype=weight_dtype, device=device),
         )
 
-    token_permutation, inverse_permutation, packed_expert_ids, packed_token_indices, packed_routing_weights = (
-        workspace.get_assignment_buffers(
-            num_assignments,
-            weight_dtype=weight_dtype,
-            device=device,
-        )
+    (
+        token_permutation,
+        inverse_permutation,
+        packed_expert_ids,
+        packed_token_indices,
+        packed_routing_weights,
+    ) = workspace.get_assignment_buffers(
+        num_assignments,
+        weight_dtype=weight_dtype,
+        device=device,
     )
-    expert_counts, expert_offsets = workspace.get_expert_buffers(num_experts, device=device)
+    expert_counts, expert_offsets = workspace.get_expert_buffers(
+        num_experts, device=device
+    )
     return (
         expert_counts,
         expert_offsets,
@@ -220,7 +232,15 @@ def triton_counting_scatter_expert_major_dispatch(
     router_offsets: torch.Tensor | None = None,
     block_size: int = _DEFAULT_TILE_SIZE,
     scan_block_size: int | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Build a stable expert-major layout without a global sort.
 
     The implementation is O(N) in global memory traffic: each assignment is
@@ -241,7 +261,9 @@ def triton_counting_scatter_expert_major_dispatch(
         raise ValueError("Triton tile size must be <= 1024")
     _require_triton_cuda(flat_expert_indices)
     if not flat_routing_weights.is_contiguous():
-        raise RuntimeError("Triton dispatcher requires contiguous flattened routing weights")
+        raise RuntimeError(
+            "Triton dispatcher requires contiguous flattened routing weights"
+        )
 
     num_assignments = flat_expert_indices.numel()
     device = flat_expert_indices.device
@@ -262,7 +284,9 @@ def triton_counting_scatter_expert_major_dispatch(
     )
 
     if num_assignments == 0:
-        expert_counts = router_counts if router_counts is not None else workspace_counts.zero_()
+        expert_counts = (
+            router_counts if router_counts is not None else workspace_counts.zero_()
+        )
         if router_offsets is None:
             workspace_offsets.zero_()
             expert_offsets = workspace_offsets

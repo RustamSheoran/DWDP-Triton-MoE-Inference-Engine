@@ -9,14 +9,22 @@ from DWDP.runtime.config import RuntimeConfig
 class BaseModelAdapter(ABC):
     """Adapter boundary between external model frameworks and DWDP runtime."""
 
-    def __init__(self, *, model: Any | None = None, tokenizer: Any | None = None, config: RuntimeConfig | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        model: Any | None = None,
+        tokenizer: Any | None = None,
+        config: RuntimeConfig | None = None,
+    ) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.config = config or RuntimeConfig()
 
     @classmethod
     @abstractmethod
-    def from_pretrained(cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs) -> "BaseModelAdapter":
+    def from_pretrained(
+        cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs
+    ) -> "BaseModelAdapter":
         """Load an external model and return an initialized adapter."""
 
     @abstractmethod

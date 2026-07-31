@@ -43,7 +43,9 @@ class ExecutorWorkspace:
     persistent_down_tile_n: torch.Tensor | None = None
     persistent_gather_counter: torch.Tensor | None = None
     persistent_down_counter: torch.Tensor | None = None
-    _persistent_gather_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+    _persistent_gather_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = (
+        None
+    )
     _persistent_down_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
     _persistent_queue_capacity: int = 0
     # The scheduler stores its compact execution description on the device.
@@ -160,17 +162,26 @@ class ExecutorWorkspace:
         needs_new_buffers = (
             self.tensorlist_device_fields is None
             or self.tensorlist_host_fields is None
-            or any(field.device != device for field in self.tensorlist_device_fields.values())
+            or any(
+                field.device != device
+                for field in self.tensorlist_device_fields.values()
+            )
             or required > self._tensorlist_capacity
         )
         if needs_new_buffers:
             capacity = max(required, max(1, self._tensorlist_capacity * 2))
             names = tensorlist_field_names()
             self.tensorlist_device_fields = {
-                name: torch.empty(capacity, dtype=torch.int64, device=device) for name in names
+                name: torch.empty(capacity, dtype=torch.int64, device=device)
+                for name in names
             }
             self.tensorlist_host_fields = {
-                name: torch.empty(capacity, dtype=torch.int64, device="cpu", pin_memory=device.type == "cuda")
+                name: torch.empty(
+                    capacity,
+                    dtype=torch.int64,
+                    device="cpu",
+                    pin_memory=device.type == "cuda",
+                )
                 for name in names
             }
             self._tensorlist_capacity = capacity
@@ -198,7 +209,13 @@ class ExecutorWorkspace:
     ) -> torch.Tensor:
         """Copy the compact scheduler rows into reusable host staging storage."""
 
-        rows = (expert_queue, expert_starts, expert_counts, execution_priority, stream_assignments)
+        rows = (
+            expert_queue,
+            expert_starts,
+            expert_counts,
+            execution_priority,
+            stream_assignments,
+        )
         count = expert_queue.numel()
         if any(row.numel() != count for row in rows):
             raise ValueError("TensorList scheduler fields must have equal lengths")
@@ -206,9 +223,18 @@ class ExecutorWorkspace:
             self._tensorlist_schedule_host is None
             or self._tensorlist_schedule_host.shape[1] < count
         ):
-            capacity = max(count, 1 if self._tensorlist_schedule_host is None else self._tensorlist_schedule_host.shape[1] * 2)
+            capacity = max(
+                count,
+                1
+                if self._tensorlist_schedule_host is None
+                else self._tensorlist_schedule_host.shape[1] * 2,
+            )
             self._tensorlist_schedule_host = torch.empty(
-                5, capacity, dtype=torch.int64, device="cpu", pin_memory=expert_queue.is_cuda
+                5,
+                capacity,
+                dtype=torch.int64,
+                device="cpu",
+                pin_memory=expert_queue.is_cuda,
             )
         schedule = self._tensorlist_schedule_host[:, :count]
         for index, row in enumerate(rows):
@@ -218,7 +244,9 @@ class ExecutorWorkspace:
             torch.cuda.current_stream(expert_queue.device).synchronize()
         return schedule
 
-    def get_tensorlist_provider_positions(self, expert_ids: tuple[int, ...]) -> dict[int, int]:
+    def get_tensorlist_provider_positions(
+        self, expert_ids: tuple[int, ...]
+    ) -> dict[int, int]:
         """Cache the provider's global-id to storage-position lookup."""
 
         if expert_ids != self._tensorlist_provider_ids:
@@ -229,7 +257,9 @@ class ExecutorWorkspace:
         assert self._tensorlist_provider_positions is not None
         return self._tensorlist_provider_positions
 
-    def ensure_persistent_queue_capacity(self, required: int, *, device: torch.device) -> int:
+    def ensure_persistent_queue_capacity(
+        self, required: int, *, device: torch.device
+    ) -> int:
         """Reserve reusable device and host SoA storage for persistent tiles.
 
         Queue entries contain only ``(descriptor_index, tile_m, tile_n)``.
@@ -244,18 +274,46 @@ class ExecutorWorkspace:
         )
         if needs_allocation:
             capacity = max(required, max(1, self._persistent_queue_capacity * 2))
+
             def allocate_triplet() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                return tuple(torch.empty(capacity, dtype=torch.int64, device=device) for _ in range(3))  # type: ignore[return-value]
-            def allocate_host_triplet() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                return tuple(torch.empty(capacity, dtype=torch.int64, device="cpu", pin_memory=device.type == "cuda") for _ in range(3))  # type: ignore[return-value]
+                return tuple(
+                    torch.empty(capacity, dtype=torch.int64, device=device)
+                    for _ in range(3)
+                )  # type: ignore[return-value]
+
+            def allocate_host_triplet() -> tuple[
+                torch.Tensor, torch.Tensor, torch.Tensor
+            ]:
+                return tuple(
+                    torch.empty(
+                        capacity,
+                        dtype=torch.int64,
+                        device="cpu",
+                        pin_memory=device.type == "cuda",
+                    )
+                    for _ in range(3)
+                )  # type: ignore[return-value]
+
             gather = allocate_triplet()
             down = allocate_triplet()
-            self.persistent_gather_descriptor_indices, self.persistent_gather_tile_m, self.persistent_gather_tile_n = gather
-            self.persistent_down_descriptor_indices, self.persistent_down_tile_m, self.persistent_down_tile_n = down
+            (
+                self.persistent_gather_descriptor_indices,
+                self.persistent_gather_tile_m,
+                self.persistent_gather_tile_n,
+            ) = gather
+            (
+                self.persistent_down_descriptor_indices,
+                self.persistent_down_tile_m,
+                self.persistent_down_tile_n,
+            ) = down
             self._persistent_gather_host = allocate_host_triplet()
             self._persistent_down_host = allocate_host_triplet()
-            self.persistent_gather_counter = torch.zeros(1, dtype=torch.int32, device=device)
-            self.persistent_down_counter = torch.zeros(1, dtype=torch.int32, device=device)
+            self.persistent_gather_counter = torch.zeros(
+                1, dtype=torch.int32, device=device
+            )
+            self.persistent_down_counter = torch.zeros(
+                1, dtype=torch.int32, device=device
+            )
             self._persistent_queue_capacity = capacity
         return self._persistent_queue_capacity
 
@@ -287,7 +345,10 @@ class ExecutorWorkspace:
         )
         if (
             self._schedule_tensors is not None
-            and all(cached is current for cached, current in zip(self._schedule_tensors, tensors))
+            and all(
+                cached is current
+                for cached, current in zip(self._schedule_tensors, tensors)
+            )
             and self._schedule_rows is not None
         ):
             return self._schedule_rows
@@ -325,10 +386,17 @@ class ExecutorWorkspace:
                 total += tensor.numel() * tensor.element_size()
         for fields in (self.tensorlist_device_fields, self.tensorlist_host_fields):
             if fields is not None:
-                total += sum(tensor.numel() * tensor.element_size() for tensor in fields.values())
+                total += sum(
+                    tensor.numel() * tensor.element_size() for tensor in fields.values()
+                )
         if self._tensorlist_schedule_host is not None:
-            total += self._tensorlist_schedule_host.numel() * self._tensorlist_schedule_host.element_size()
+            total += (
+                self._tensorlist_schedule_host.numel()
+                * self._tensorlist_schedule_host.element_size()
+            )
         for fields in (self._persistent_gather_host, self._persistent_down_host):
             if fields is not None:
-                total += sum(tensor.numel() * tensor.element_size() for tensor in fields)
+                total += sum(
+                    tensor.numel() * tensor.element_size() for tensor in fields
+                )
         return total

@@ -13,9 +13,19 @@ from .experts import ExpertRegistry
 from .extractors import extract_qwen_swiglu_weight_provider
 from .fp8 import convert_qwen_weights_to_fp8_once, quantize_activations_once
 from .kernels.fp8 import execute_persistent_qwen_fp8, select_fp8_dtype
-from .kernels.persistent import TRITON_AVAILABLE, build_persistent_tile_queues, execute_persistent_qwen
+from .kernels.persistent import (
+    TRITON_AVAILABLE,
+    build_persistent_tile_queues,
+    execute_persistent_qwen,
+)
 from .metadata import TimingMetadata, WorkspaceMetadata
-from .outputs import ExecutionMetadata, ExecutionStatistics, ExecutorOutput, ExpertOutput, OutputMetadata
+from .outputs import (
+    ExecutionMetadata,
+    ExecutionStatistics,
+    ExecutorOutput,
+    ExpertOutput,
+    OutputMetadata,
+)
 from .pytorch import PyTorchExecutor
 from .registry import register_executor
 from .tensor_list import TensorList
@@ -43,7 +53,9 @@ class TritonExpertExecutor(PyTorchExecutor):
         super().__init__(config, experts)
         provider = weight_provider or extract_qwen_swiglu_weight_provider(experts)
         if not isinstance(provider, QwenSwiGLUWeightProvider):
-            raise ValueError("persistent Triton execution requires a QwenSwiGLUWeightProvider")
+            raise ValueError(
+                "persistent Triton execution requires a QwenSwiGLUWeightProvider"
+            )
         self.weight_provider = provider
 
     def forward(
@@ -60,27 +72,39 @@ class TritonExpertExecutor(PyTorchExecutor):
             if self.config.backend == "triton_fp8":
                 raise RuntimeError("native FP8 execution requires CUDA and Triton")
             output = super().forward(
-                hidden_states, dispatch_plan, execution_plan, communication_plan, workspace=workspace
+                hidden_states,
+                dispatch_plan,
+                execution_plan,
+                communication_plan,
+                workspace=workspace,
             )
             output.backend = "triton_reference_fallback"
             output.statistics.backend = "triton_reference_fallback"
             return output
 
         flat_hidden_states, token_shape = flatten_hidden_states(hidden_states)
-        validate_executor_inputs(flat_hidden_states, dispatch_plan, execution_plan, communication_plan)
+        validate_executor_inputs(
+            flat_hidden_states, dispatch_plan, execution_plan, communication_plan
+        )
         if self.weight_provider.has_bias:
-            raise ValueError("persistent Triton execution does not support biased Qwen projections")
+            raise ValueError(
+                "persistent Triton execution does not support biased Qwen projections"
+            )
         if self.config.max_tokens_per_expert is not None:
             counts = execution_plan.expert_counts
             if bool((counts > self.config.max_tokens_per_expert).any().item()):
-                raise ValueError("an expert received more than max_tokens_per_expert tokens")
+                raise ValueError(
+                    "an expert received more than max_tokens_per_expert tokens"
+                )
 
         # A workspace is mandatory for descriptor lifetime and allocation
         # ownership.  A caller that omits it gets a private, forward-scoped one.
         active_workspace = workspace or ExecutorWorkspace()
         fp8_dtype = select_fp8_dtype(hidden_states.device)
         if self.config.backend == "triton_fp8" and fp8_dtype is None:
-            raise RuntimeError("native FP8 execution is unavailable on this CUDA/Triton installation")
+            raise RuntimeError(
+                "native FP8 execution is unavailable on this CUDA/Triton installation"
+            )
         use_fp8 = fp8_dtype is not None
         execution_hidden_states = flat_hidden_states
         output_dtype = self.config.dtype or hidden_states.dtype
@@ -90,7 +114,8 @@ class TritonExpertExecutor(PyTorchExecutor):
             # converted in place once; inputs are quantized once per forward.
             convert_qwen_weights_to_fp8_once(self.weight_provider, fp8_dtype)
             execution_hidden_states = active_workspace.get_fp8_input_buffer(
-                flat_hidden_states.shape[0], flat_hidden_states.shape[1],
+                flat_hidden_states.shape[0],
+                flat_hidden_states.shape[1],
                 dtype=fp8_dtype,
                 device=hidden_states.device,
             )
@@ -99,9 +124,16 @@ class TritonExpertExecutor(PyTorchExecutor):
         elif self.config.backend == "triton_fp8":
             raise RuntimeError("native FP8 execution is unavailable")
         elif output_dtype != hidden_states.dtype:
-            raise ValueError("persistent Triton execution requires output dtype to match activation dtype")
-        if execution_hidden_states.dtype not in (torch.float16, torch.bfloat16) and not use_fp8:
-            raise ValueError("persistent Triton execution supports float16 and bfloat16 activations")
+            raise ValueError(
+                "persistent Triton execution requires output dtype to match activation dtype"
+            )
+        if (
+            execution_hidden_states.dtype not in (torch.float16, torch.bfloat16)
+            and not use_fp8
+        ):
+            raise ValueError(
+                "persistent Triton execution supports float16 and bfloat16 activations"
+            )
         assignments = dispatch_plan.metadata.num_assignments
         packed_outputs, weighted_outputs = active_workspace.get_output_buffers(
             assignments,

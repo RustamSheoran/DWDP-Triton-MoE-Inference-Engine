@@ -22,7 +22,9 @@ def validate_execution_plan(execution_plan: ExecutionPlan) -> None:
         if tensor.ndim != 1:
             raise ValueError("ExecutionPlan scheduling tensors must be 1D")
         if tensor.numel() != active_count:
-            raise ValueError("ExecutionPlan scheduling tensors must have matching lengths")
+            raise ValueError(
+                "ExecutionPlan scheduling tensors must have matching lengths"
+            )
         if tensor.dtype != torch.int64:
             raise ValueError("ExecutionPlan scheduling tensors must be int64")
 

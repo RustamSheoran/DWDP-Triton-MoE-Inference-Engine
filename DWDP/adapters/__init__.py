@@ -3,7 +3,13 @@
 from .base import BaseModelAdapter
 from .huggingface import HuggingFaceAdapter
 from .qwen15_moe import DWDPMoEBlock, Qwen15MoEAdapter
-from .registry import build_adapter, detect_adapter_class, get_adapter_class, register_adapter, register_model_adapter
+from .registry import (
+    build_adapter,
+    detect_adapter_class,
+    get_adapter_class,
+    register_adapter,
+    register_model_adapter,
+)
 
 __all__ = [
     "BaseModelAdapter",

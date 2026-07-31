@@ -62,7 +62,9 @@ class DWDPRuntime(nn.Module):
         """Build a single-GPU reference runtime from explicit MoE components."""
 
         runtime_config = config or RuntimeConfig()
-        expert_registry = experts if isinstance(experts, ExpertRegistry) else ExpertRegistry(experts)
+        expert_registry = (
+            experts if isinstance(experts, ExpertRegistry) else ExpertRegistry(experts)
+        )
         router_module = router or build_router(
             RouterConfig(
                 hidden_size=hidden_size,
@@ -128,20 +130,35 @@ class DWDPRuntime(nn.Module):
         )
 
     @classmethod
-    def wrap(cls, model: Any, *, config: RuntimeConfig | None = None, tokenizer: Any | None = None) -> "DWDPRuntime":
+    def wrap(
+        cls,
+        model: Any,
+        *,
+        config: RuntimeConfig | None = None,
+        tokenizer: Any | None = None,
+    ) -> "DWDPRuntime":
         """Wrap an existing Hugging Face model with a DWDP adapter."""
 
         runtime_config = config or RuntimeConfig()
-        adapter = build_adapter(runtime_config.adapter, model=model, tokenizer=tokenizer, config=runtime_config)
+        adapter = build_adapter(
+            runtime_config.adapter,
+            model=model,
+            tokenizer=tokenizer,
+            config=runtime_config,
+        )
         return adapter.create_runtime()
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs) -> "DWDPRuntime":
+    def from_pretrained(
+        cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs
+    ) -> "DWDPRuntime":
         """Load a model through the configured adapter and return a DWDP runtime."""
 
         runtime_config = config or RuntimeConfig()
         adapter_cls = get_adapter_class(runtime_config.adapter)
-        adapter = adapter_cls.from_pretrained(model_name_or_path, config=runtime_config, **kwargs)
+        adapter = adapter_cls.from_pretrained(
+            model_name_or_path, config=runtime_config, **kwargs
+        )
         return adapter.create_runtime()
 
     def forward(self, hidden_states: torch.Tensor) -> RuntimePipelineOutput:
@@ -201,7 +218,9 @@ class DWDPRuntime(nn.Module):
         """Generate text/tokens through the adapter when a full model is wrapped."""
 
         if self.adapter is None:
-            raise RuntimeError("generate() requires a model adapter; use DWDPRuntime.wrap or from_pretrained")
+            raise RuntimeError(
+                "generate() requires a model adapter; use DWDPRuntime.wrap or from_pretrained"
+            )
         return self.adapter.generate(*args, **kwargs)
 
     def compile(self) -> "DWDPRuntime":
@@ -223,13 +242,19 @@ class DWDPRuntime(nn.Module):
         from dataclasses import asdict
 
         previous = self.config
-        object.__setattr__(self, "config", RuntimeConfig(**{**asdict(previous), "enable_profiling": True}))
+        object.__setattr__(
+            self,
+            "config",
+            RuntimeConfig(**{**asdict(previous), "enable_profiling": True}),
+        )
         try:
             return self.forward(hidden_states).profile
         finally:
             object.__setattr__(self, "config", previous)
 
-    def benchmark(self, hidden_states: torch.Tensor, *, warmup: int = 5, iters: int = 20) -> dict[str, float]:
+    def benchmark(
+        self, hidden_states: torch.Tensor, *, warmup: int = 5, iters: int = 20
+    ) -> dict[str, float]:
         """Benchmark repeated forward passes without executing generation."""
 
         import time
@@ -249,14 +274,27 @@ class DWDPRuntime(nn.Module):
         return {
             "latency_us": latency * 1e6,
             "tokens_per_second": tokens / latency,
-            "workspace_bytes": float(self.context.workspaces.estimated_bytes() if self.context.workspaces else 0),
+            "workspace_bytes": float(
+                self.context.workspaces.estimated_bytes()
+                if self.context.workspaces
+                else 0
+            ),
         }
 
-    def validate_against(self, reference: torch.Tensor, hidden_states: torch.Tensor, *, rtol: float = 1e-4, atol: float = 1e-4) -> CorrectnessReport:
+    def validate_against(
+        self,
+        reference: torch.Tensor,
+        hidden_states: torch.Tensor,
+        *,
+        rtol: float = 1e-4,
+        atol: float = 1e-4,
+    ) -> CorrectnessReport:
         """Compare DWDP hidden-state output against a reference tensor."""
 
         actual = self.forward(hidden_states).hidden_states
-        return CorrectnessReport(tensor=compare_tensors(reference, actual, rtol=rtol, atol=atol))
+        return CorrectnessReport(
+            tensor=compare_tensors(reference, actual, rtol=rtol, atol=atol)
+        )
 
 
 register_runtime("dwdp", DWDPRuntime)

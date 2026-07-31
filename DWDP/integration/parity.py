@@ -35,7 +35,9 @@ class RuntimeParityHarness:
         """Compare a reference hidden-state tensor with DWDP runtime output."""
 
         actual = self.runtime(hidden_states).hidden_states
-        return CorrectnessReport(tensor=compare_tensors(reference, actual, rtol=rtol, atol=atol))
+        return CorrectnessReport(
+            tensor=compare_tensors(reference, actual, rtol=rtol, atol=atol)
+        )
 
     def compare_generation(self, *args, **kwargs) -> GenerationParityReport:
         """Compare native and DWDP generated tokens using identical inputs."""
@@ -44,7 +46,11 @@ class RuntimeParityHarness:
             raise RuntimeError("native_model is required for generation parity")
         native_output = self.native_model.generate(*args, **kwargs)
         dwdp_output = self.runtime.generate(*args, **kwargs)
-        token_parity = bool(torch.equal(native_output, dwdp_output)) if isinstance(native_output, torch.Tensor) else native_output == dwdp_output
+        token_parity = (
+            bool(torch.equal(native_output, dwdp_output))
+            if isinstance(native_output, torch.Tensor)
+            else native_output == dwdp_output
+        )
         return GenerationParityReport(
             token_parity=token_parity,
             native_output=native_output,

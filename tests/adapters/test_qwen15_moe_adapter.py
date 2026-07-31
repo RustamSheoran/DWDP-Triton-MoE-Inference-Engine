@@ -21,11 +21,15 @@ class FakeQwenMoeBlock(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.gate = nn.Linear(4, 2, bias=False)
-        self.experts = nn.ModuleList([nn.Linear(4, 4, bias=False), nn.Linear(4, 4, bias=False)])
+        self.experts = nn.ModuleList(
+            [nn.Linear(4, 4, bias=False), nn.Linear(4, 4, bias=False)]
+        )
         self.top_k = 1
         self.norm_topk_prob = True
         with torch.no_grad():
-            self.gate.weight.copy_(torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]]))
+            self.gate.weight.copy_(
+                torch.tensor([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
+            )
             self.experts[0].weight.copy_(torch.eye(4) * 2.0)
             self.experts[1].weight.copy_(torch.eye(4) * 3.0)
 
@@ -109,7 +113,9 @@ def test_huggingface_adapter_auto_patches_supported_model() -> None:
 
 
 def test_validator_reports_relative_error_and_token_parity() -> None:
-    comparison = compare_outputs(torch.tensor([1.0, 2.0]), torch.tensor([1.0, 2.01]), atol=0.1)
+    comparison = compare_outputs(
+        torch.tensor([1.0, 2.0]), torch.tensor([1.0, 2.01]), atol=0.1
+    )
 
     assert comparison.allclose
     assert comparison.max_relative_error > 0.0

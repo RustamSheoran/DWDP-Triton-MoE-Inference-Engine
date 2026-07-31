@@ -16,7 +16,9 @@ def validate_hidden_states(hidden_states: torch.Tensor, hidden_size: int) -> Non
         )
 
 
-def flatten_token_dims(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
+def flatten_token_dims(
+    hidden_states: torch.Tensor,
+) -> tuple[torch.Tensor, tuple[int, ...]]:
     """Flatten all token dimensions into a single leading dimension."""
 
     token_shape = tuple(hidden_states.shape[:-1])

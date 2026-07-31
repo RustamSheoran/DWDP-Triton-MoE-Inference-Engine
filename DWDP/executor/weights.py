@@ -55,7 +55,9 @@ class ExpertMajorMatrixView:
         if not self.expert_weights:
             raise ValueError(f"{self.name} requires at least one expert weight")
         if len(self.expert_ids) != len(self.expert_weights):
-            raise ValueError(f"{self.name} expert ids and weights must have matching lengths")
+            raise ValueError(
+                f"{self.name} expert ids and weights must have matching lengths"
+            )
         reference = self.expert_weights[0]
         if reference.ndim != 2:
             raise ValueError(f"{self.name} weights must be rank-2")
@@ -128,7 +130,10 @@ class FusedGateUpWeightView:
             raise ValueError("gate and up projections must use the same expert ids")
         if self.gate_weights.shape != self.up_weights.shape:
             raise ValueError("gate and up projections must have identical shapes")
-        if self.gate_weights.dtype != self.up_weights.dtype or self.gate_weights.device != self.up_weights.device:
+        if (
+            self.gate_weights.dtype != self.up_weights.dtype
+            or self.gate_weights.device != self.up_weights.device
+        ):
             raise ValueError("gate and up projections must use one dtype and device")
 
     @property
@@ -159,7 +164,9 @@ class FusedGateUpWeightView:
     def for_expert(self, expert_id: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Return original gate and up matrices for one expert."""
 
-        return self.gate_weights.for_expert(expert_id), self.up_weights.for_expert(expert_id)
+        return self.gate_weights.for_expert(expert_id), self.up_weights.for_expert(
+            expert_id
+        )
 
     def materialize(self) -> torch.Tensor:
         """Explicitly concatenate and stack ``[E, 2I, H]`` weights."""
@@ -167,7 +174,9 @@ class FusedGateUpWeightView:
         return torch.stack(
             tuple(
                 torch.cat((gate, up), dim=0)
-                for gate, up in zip(self.gate_weights.expert_weights, self.up_weights.expert_weights)
+                for gate, up in zip(
+                    self.gate_weights.expert_weights, self.up_weights.expert_weights
+                )
             ),
             dim=0,
         )
@@ -236,7 +245,11 @@ class QwenSwiGLUWeightProvider(ExpertWeightProvider):
             raise ValueError("down bias count must match expert count")
         experts, two_intermediate, hidden_size = self._gate_up_weights.shape
         down_experts, down_hidden_size, intermediate_size = self._down_weights.shape
-        if experts != down_experts or hidden_size != down_hidden_size or two_intermediate != 2 * intermediate_size:
+        if (
+            experts != down_experts
+            or hidden_size != down_hidden_size
+            or two_intermediate != 2 * intermediate_size
+        ):
             raise ValueError("Qwen SwiGLU projection shapes are incompatible")
 
     @property
@@ -279,7 +292,10 @@ class QwenSwiGLUWeightProvider(ExpertWeightProvider):
     def has_bias(self) -> bool:
         """Whether any Qwen projection has a bias."""
 
-        return any(bias is not None for bias in (*self.gate_biases, *self.up_biases, *self.down_biases))
+        return any(
+            bias is not None
+            for bias in (*self.gate_biases, *self.up_biases, *self.down_biases)
+        )
 
     @property
     def weight_format(self) -> WeightFormat:
@@ -313,12 +329,22 @@ def build_qwen_swiglu_weight_provider(
     if not experts:
         raise ValueError("Qwen SwiGLU provider requires at least one expert")
     expert_ids = tuple(expert_id for expert_id, _ in experts)
-    gate_modules = tuple(_linear_projection(expert, "gate_proj") for _, expert in experts)
+    gate_modules = tuple(
+        _linear_projection(expert, "gate_proj") for _, expert in experts
+    )
     up_modules = tuple(_linear_projection(expert, "up_proj") for _, expert in experts)
-    down_modules = tuple(_linear_projection(expert, "down_proj") for _, expert in experts)
-    gate_view = ExpertMajorMatrixView(expert_ids, tuple(module.weight for module in gate_modules), "gate_proj")
-    up_view = ExpertMajorMatrixView(expert_ids, tuple(module.weight for module in up_modules), "up_proj")
-    down_view = ExpertMajorMatrixView(expert_ids, tuple(module.weight for module in down_modules), "down_proj")
+    down_modules = tuple(
+        _linear_projection(expert, "down_proj") for _, expert in experts
+    )
+    gate_view = ExpertMajorMatrixView(
+        expert_ids, tuple(module.weight for module in gate_modules), "gate_proj"
+    )
+    up_view = ExpertMajorMatrixView(
+        expert_ids, tuple(module.weight for module in up_modules), "up_proj"
+    )
+    down_view = ExpertMajorMatrixView(
+        expert_ids, tuple(module.weight for module in down_modules), "down_proj"
+    )
     return QwenSwiGLUWeightProvider(
         _expert_ids=expert_ids,
         _gate_up_weights=FusedGateUpWeightView(gate_view, up_view),

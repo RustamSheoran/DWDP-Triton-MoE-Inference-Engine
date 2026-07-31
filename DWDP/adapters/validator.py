@@ -25,11 +25,19 @@ class AdapterParityReport:
     generated_token_parity: bool | None = None
 
 
-def compare_outputs(reference: torch.Tensor, actual: torch.Tensor, *, rtol: float = 1e-4, atol: float = 1e-4) -> AdapterTensorComparison:
+def compare_outputs(
+    reference: torch.Tensor,
+    actual: torch.Tensor,
+    *,
+    rtol: float = 1e-4,
+    atol: float = 1e-4,
+) -> AdapterTensorComparison:
     """Compare tensors including relative error."""
 
     if reference.shape != actual.shape:
-        raise ValueError(f"shape mismatch: reference={tuple(reference.shape)} actual={tuple(actual.shape)}")
+        raise ValueError(
+            f"shape mismatch: reference={tuple(reference.shape)} actual={tuple(actual.shape)}"
+        )
     diff = (reference - actual).abs()
     denom = reference.abs().clamp_min(1e-12)
     rel = diff / denom

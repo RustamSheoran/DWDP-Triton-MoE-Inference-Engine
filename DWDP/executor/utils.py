@@ -7,12 +7,16 @@ from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
 
 
-def flatten_hidden_states(hidden_states: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
+def flatten_hidden_states(
+    hidden_states: torch.Tensor,
+) -> tuple[torch.Tensor, tuple[int, ...]]:
     """Flatten token-major hidden states for expert execution."""
 
     if hidden_states.ndim < 2:
         raise ValueError("hidden_states must have at least 2 dimensions")
-    return hidden_states.reshape(-1, hidden_states.shape[-1]), tuple(hidden_states.shape[:-1])
+    return hidden_states.reshape(-1, hidden_states.shape[-1]), tuple(
+        hidden_states.shape[:-1]
+    )
 
 
 def validate_executor_inputs(
@@ -50,12 +54,16 @@ def validate_executor_inputs(
         execution_plan.stream_assignments,
     ):
         if tensor.numel() != active_count:
-            raise ValueError("ExecutionPlan tensors must have matching active expert length")
+            raise ValueError(
+                "ExecutionPlan tensors must have matching active expert length"
+            )
         if tensor.dtype != torch.int64:
             raise ValueError("ExecutionPlan tensors must be int64")
 
     if communication_plan.remote_expert_ids.numel() > 0:
-        raise NotImplementedError("PyTorchExecutor reference backend only supports local experts")
+        raise NotImplementedError(
+            "PyTorchExecutor reference backend only supports local experts"
+        )
 
 
 def estimate_tensor_bytes(tensor: torch.Tensor | None) -> int:

@@ -31,5 +31,8 @@ class SchedulerConfig:
             raise ValueError("scheduling_policy must be non-empty")
         if self.stream_count <= 0:
             raise ValueError("stream_count must be > 0")
-        if self.max_execution_batch_size is not None and self.max_execution_batch_size <= 0:
+        if (
+            self.max_execution_batch_size is not None
+            and self.max_execution_batch_size <= 0
+        ):
             raise ValueError("max_execution_batch_size must be > 0 when provided")

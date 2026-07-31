@@ -34,5 +34,7 @@ def build_executor(
     """Instantiate an executor from configuration and expert modules."""
 
     executor_cls = get_executor_class(config.backend)
-    registry = experts if isinstance(experts, ExpertRegistry) else ExpertRegistry(experts)
+    registry = (
+        experts if isinstance(experts, ExpertRegistry) else ExpertRegistry(experts)
+    )
     return executor_cls(config, registry)

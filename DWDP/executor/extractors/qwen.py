@@ -17,10 +17,16 @@ def is_qwen_swiglu_expert(expert: nn.Module) -> bool:
     )
 
 
-def extract_qwen_swiglu_weight_provider(experts: ExpertRegistry) -> QwenSwiGLUWeightProvider:
+def extract_qwen_swiglu_weight_provider(
+    experts: ExpertRegistry,
+) -> QwenSwiGLUWeightProvider:
     """Create a storage-preserving provider from a Qwen-style expert registry."""
 
-    items = tuple((expert_id, experts.get(expert_id)) for expert_id in experts.expert_ids)
+    items = tuple(
+        (expert_id, experts.get(expert_id)) for expert_id in experts.expert_ids
+    )
     if not all(is_qwen_swiglu_expert(expert) for _, expert in items):
-        raise ValueError("Triton expert execution requires Qwen-style gate_proj, up_proj, and down_proj experts")
+        raise ValueError(
+            "Triton expert execution requires Qwen-style gate_proj, up_proj, and down_proj experts"
+        )
     return build_qwen_swiglu_weight_provider(items)

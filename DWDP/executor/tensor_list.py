@@ -89,7 +89,9 @@ class TensorList:
         if provider.hidden_size != hidden_states.shape[1]:
             raise ValueError("Qwen provider hidden size does not match activations")
         if packed_outputs.shape != weighted_outputs.shape:
-            raise ValueError("packed and weighted output buffers must have the same shape")
+            raise ValueError(
+                "packed and weighted output buffers must have the same shape"
+            )
         for name, tensor in (
             ("packed token indices", dispatch_plan.assignments.packed_token_indices),
             ("routing weights", dispatch_plan.assignments.packed_routing_weights),
@@ -126,7 +128,9 @@ class TensorList:
         input_ptr = hidden_states.data_ptr()
         token_index_ptr = dispatch_plan.assignments.packed_token_indices.data_ptr()
         routing_weight_ptr = dispatch_plan.assignments.packed_routing_weights.data_ptr()
-        provider_positions = workspace.get_tensorlist_provider_positions(provider.expert_ids)
+        provider_positions = workspace.get_tensorlist_provider_positions(
+            provider.expert_ids
+        )
         gate_weights = provider.gate_up_weights.gate_weights.expert_weights
         up_weights = provider.gate_up_weights.up_weights.expert_weights
         down_weights = provider.down_weights.expert_weights
@@ -144,14 +148,24 @@ class TensorList:
             try:
                 provider_index = provider_positions[expert_id]
             except KeyError as exc:
-                raise KeyError(f"TensorList has no Qwen weights for expert {expert_id}") from exc
+                raise KeyError(
+                    f"TensorList has no Qwen weights for expert {expert_id}"
+                ) from exc
             gate = gate_weights[provider_index]
             up = up_weights[provider_index]
             down = down_weights[provider_index]
-            if gate.dtype != hidden_states.dtype or up.dtype != hidden_states.dtype or down.dtype != hidden_states.dtype:
-                raise ValueError("grouped Triton execution requires matching activation and weight dtypes")
+            if (
+                gate.dtype != hidden_states.dtype
+                or up.dtype != hidden_states.dtype
+                or down.dtype != hidden_states.dtype
+            ):
+                raise ValueError(
+                    "grouped Triton execution requires matching activation and weight dtypes"
+                )
             if gate.device != device or up.device != device or down.device != device:
-                raise ValueError("grouped Triton execution requires local weight storage on the activation device")
+                raise ValueError(
+                    "grouped Triton execution requires local weight storage on the activation device"
+                )
             # Explicit field writes keep the construction path free of
             # short-lived per-expert Python records and nested descriptors.
             host["input_ptrs"][index] = input_ptr
@@ -160,9 +174,22 @@ class TensorList:
             host["gate_weight_ptrs"][index] = gate.data_ptr()
             host["up_weight_ptrs"][index] = up.data_ptr()
             host["down_weight_ptrs"][index] = down.data_ptr()
-            host["intermediate_ptrs"][index] = intermediate.data_ptr() + token_offset * intermediate.stride(0) * intermediate.element_size()
-            host["output_ptrs"][index] = packed_outputs.data_ptr() + token_offset * packed_outputs.stride(0) * packed_outputs.element_size()
-            host["weighted_output_ptrs"][index] = weighted_outputs.data_ptr() + token_offset * weighted_outputs.stride(0) * weighted_outputs.element_size()
+            host["intermediate_ptrs"][index] = (
+                intermediate.data_ptr()
+                + token_offset * intermediate.stride(0) * intermediate.element_size()
+            )
+            host["output_ptrs"][index] = (
+                packed_outputs.data_ptr()
+                + token_offset
+                * packed_outputs.stride(0)
+                * packed_outputs.element_size()
+            )
+            host["weighted_output_ptrs"][index] = (
+                weighted_outputs.data_ptr()
+                + token_offset
+                * weighted_outputs.stride(0)
+                * weighted_outputs.element_size()
+            )
             host["quantization_ptrs"][index] = 0
             host["expert_ids"][index] = expert_id
             host["token_offsets"][index] = token_offset
@@ -195,11 +222,32 @@ class TensorList:
 
 
 _FIELD_NAMES = (
-    "input_ptrs", "token_index_ptrs", "routing_weight_ptrs", "gate_weight_ptrs", "up_weight_ptrs",
-    "down_weight_ptrs", "intermediate_ptrs", "output_ptrs", "weighted_output_ptrs", "quantization_ptrs",
-    "expert_ids", "token_offsets", "token_counts", "m", "n", "k", "intermediate_n", "input_ld",
-    "gate_ld", "up_ld", "down_ld", "output_ld", "dtype_codes", "workspace_indices",
-    "execution_priorities", "stream_ids",
+    "input_ptrs",
+    "token_index_ptrs",
+    "routing_weight_ptrs",
+    "gate_weight_ptrs",
+    "up_weight_ptrs",
+    "down_weight_ptrs",
+    "intermediate_ptrs",
+    "output_ptrs",
+    "weighted_output_ptrs",
+    "quantization_ptrs",
+    "expert_ids",
+    "token_offsets",
+    "token_counts",
+    "m",
+    "n",
+    "k",
+    "intermediate_n",
+    "input_ld",
+    "gate_ld",
+    "up_ld",
+    "down_ld",
+    "output_ld",
+    "dtype_codes",
+    "workspace_indices",
+    "execution_priorities",
+    "stream_ids",
 )
 
 
@@ -216,7 +264,9 @@ def _dtype_code(dtype: torch.dtype) -> int:
         return 2
     if dtype in _fp8_dtypes():
         return 3
-    raise ValueError("Triton execution requires float16, bfloat16, or a supported FP8 dtype")
+    raise ValueError(
+        "Triton execution requires float16, bfloat16, or a supported FP8 dtype"
+    )
 
 
 def _fp8_dtypes() -> tuple[torch.dtype, ...]:
@@ -224,6 +274,11 @@ def _fp8_dtypes() -> tuple[torch.dtype, ...]:
 
     return tuple(
         dtype
-        for name in ("float8_e4m3fn", "float8_e4m3fnuz", "float8_e5m2", "float8_e5m2fnuz")
+        for name in (
+            "float8_e4m3fn",
+            "float8_e4m3fnuz",
+            "float8_e5m2",
+            "float8_e5m2fnuz",
+        )
         if isinstance((dtype := getattr(torch, name, None)), torch.dtype)
     )

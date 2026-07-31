@@ -83,7 +83,15 @@ def stable_sort_expert_major_dispatch(
     workspace: DispatchWorkspace | None = None,
     router_counts: torch.Tensor | None = None,
     router_offsets: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Stable-sort reference dispatch path.
 
     This preserves the original baseline implementation for benchmarking and
@@ -162,7 +170,15 @@ def counting_scatter_expert_major_dispatch(
     workspace: DispatchWorkspace | None = None,
     router_counts: torch.Tensor | None = None,
     router_offsets: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """O(N) histogram + prefix-sum + scatter reference dispatch path.
 
     The current reference implementation computes deterministic destination
@@ -171,7 +187,9 @@ def counting_scatter_expert_major_dispatch(
     """
 
     if not stable_order:
-        raise ValueError("counting_scatter requires stable_order=True in the reference path")
+        raise ValueError(
+            "counting_scatter requires stable_order=True in the reference path"
+        )
 
     assignment_buffers, _, expert_counts, expert_offsets = _resolve_expert_layout(
         num_assignments=flat_expert_indices.numel(),
@@ -250,7 +268,15 @@ def reference_expert_major_dispatch(
     workspace: DispatchWorkspace | None = None,
     router_counts: torch.Tensor | None = None,
     router_offsets: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Dispatch planning entry point with selectable reference algorithms."""
 
     if algorithm == "counting_scatter":

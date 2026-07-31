@@ -29,8 +29,20 @@ from DWDP.benchmarking.environment import collect_environment_metadata
 from DWDP.runtime import RuntimeConfig
 
 
-DWDP_STAGE_NAMES = ("router", "dispatcher", "scheduler", "comms_planner", "executor", "merger")
-SYNC_PATTERNS = ("aten::item", "aten::_local_scalar_dense", "synchronize", "cuda_synchronize")
+DWDP_STAGE_NAMES = (
+    "router",
+    "dispatcher",
+    "scheduler",
+    "comms_planner",
+    "executor",
+    "merger",
+)
+SYNC_PATTERNS = (
+    "aten::item",
+    "aten::_local_scalar_dense",
+    "synchronize",
+    "cuda_synchronize",
+)
 
 
 @dataclass(slots=True)
@@ -77,11 +89,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=5)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260723)
-    parser.add_argument("--with-stack", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--with-stack", action=argparse.BooleanOptionalAction, default=True
+    )
     parser.add_argument("--results-root", default="results/profile")
     args = parser.parse_args()
     if args.layer_index < 0 or args.batch_size <= 0 or args.sequence_length <= 0:
-        parser.error("--layer-index must be >= 0; --batch-size and --sequence-length must be > 0")
+        parser.error(
+            "--layer-index must be >= 0; --batch-size and --sequence-length must be > 0"
+        )
     if args.warmup < 0 or args.iterations <= 0:
         parser.error("--warmup must be >= 0 and --iterations must be > 0")
     return args
@@ -134,21 +150,32 @@ def _run_dwdp_staged(
         with torch.autograd.profiler.record_function(f"profile.dwdp.{name}"):
             value = stage_wrapper(name, fn) if stage_wrapper is not None else fn()
         end.record()
-        records.append(StageEvent(name, (time.perf_counter() - cpu_start) * 1e3, start, end))
+        records.append(
+            StageEvent(name, (time.perf_counter() - cpu_start) * 1e3, start, end)
+        )
         return value
 
     router_output = stage("router", lambda: block.router(hidden_states))
     dispatch_plan = stage(
         "dispatcher",
-        lambda: block.dispatcher(router_output, workspace=workspaces.dispatch if workspaces is not None else None),
+        lambda: block.dispatcher(
+            router_output,
+            workspace=workspaces.dispatch if workspaces is not None else None,
+        ),
     )
     execution_plan = stage(
         "scheduler",
-        lambda: block.scheduler(dispatch_plan, workspace=workspaces.scheduler if workspaces is not None else None),
+        lambda: block.scheduler(
+            dispatch_plan,
+            workspace=workspaces.scheduler if workspaces is not None else None,
+        ),
     )
     communication_plan = stage(
         "comms_planner",
-        lambda: block.comms_planner(execution_plan, workspace=workspaces.comms if workspaces is not None else None),
+        lambda: block.comms_planner(
+            execution_plan,
+            workspace=workspaces.comms if workspaces is not None else None,
+        ),
     )
     executor_output = stage(
         "executor",
@@ -162,7 +189,10 @@ def _run_dwdp_staged(
     )
     merger_output = stage(
         "merger",
-        lambda: block.merger(executor_output, workspace=workspaces.merger if workspaces is not None else None),
+        lambda: block.merger(
+            executor_output,
+            workspace=workspaces.merger if workspaces is not None else None,
+        ),
     )
     output = merger_output.hidden_states
     if block.shared_expert is not None:
@@ -178,25 +208,37 @@ def _run_dwdp_staged(
         shared_end.record()
         records[-1] = StageEvent(
             "merger",
-            records[-1].cpu_orchestration_ms + (time.perf_counter() - shared_cpu_start) * 1e3,
+            records[-1].cpu_orchestration_ms
+            + (time.perf_counter() - shared_cpu_start) * 1e3,
             records[-1].start,
             shared_end,
         )
     return output, tuple(records)
 
 
-def _aggregate_stage_events(events: tuple[tuple[StageEvent, ...], ...]) -> tuple[StageTiming, ...]:
+def _aggregate_stage_events(
+    events: tuple[tuple[StageEvent, ...], ...],
+) -> tuple[StageTiming, ...]:
     """Synchronize once and aggregate event timings across timed iterations."""
 
     torch.cuda.synchronize()
     result: list[StageTiming] = []
     for name in DWDP_STAGE_NAMES:
-        matching = [record for iteration in events for record in iteration if record.name == name]
+        matching = [
+            record
+            for iteration in events
+            for record in iteration
+            if record.name == name
+        ]
         result.append(
             StageTiming(
                 name=name,
-                gpu_latency_ms=statistics.median(record.start.elapsed_time(record.end) for record in matching),
-                cpu_orchestration_ms=statistics.median(record.cpu_orchestration_ms for record in matching),
+                gpu_latency_ms=statistics.median(
+                    record.start.elapsed_time(record.end) for record in matching
+                ),
+                cpu_orchestration_ms=statistics.median(
+                    record.cpu_orchestration_ms for record in matching
+                ),
             )
         )
     return tuple(result)
@@ -226,17 +268,26 @@ def _run_iterations(
             gpu_ms, cpu_ms, _ = _cuda_event_total(fn)
         totals.append(gpu_ms)
         cpu_totals.append(cpu_ms)
-    return statistics.median(totals), statistics.median(cpu_totals), tuple(stage_records)
+    return (
+        statistics.median(totals),
+        statistics.median(cpu_totals),
+        tuple(stage_records),
+    )
 
 
-def _profile_callable(name: str, fn: Callable[[], object], *, with_stack: bool) -> tuple[object, ProfileDetails]:
+def _profile_callable(
+    name: str, fn: Callable[[], object], *, with_stack: bool
+) -> tuple[object, ProfileDetails]:
     """Capture kernel count, synchronization indicators, allocations, and operators."""
 
     torch.cuda.synchronize()
     allocated_before = int(torch.cuda.memory_allocated())
     torch.cuda.reset_peak_memory_stats()
     with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
         profile_memory=True,
         with_stack=with_stack,
         record_shapes=True,
@@ -247,7 +298,9 @@ def _profile_callable(name: str, fn: Callable[[], object], *, with_stack: bool) 
     events = profiler.key_averages()
     trace_events = profiler.events()
     kernel_events = sum(
-        1 for event in trace_events if "cuda" in str(getattr(event, "device_type", "")).lower()
+        1
+        for event in trace_events
+        if "cuda" in str(getattr(event, "device_type", "")).lower()
     )
     synchronization_events = 0
     for event in events:
@@ -260,15 +313,27 @@ def _profile_callable(name: str, fn: Callable[[], object], *, with_stack: bool) 
             "calls": int(event.count),
             "self_cpu_ms": float(getattr(event, "self_cpu_time_total", 0.0)) / 1e3,
             "self_cuda_ms": float(
-                getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0))
+                getattr(
+                    event,
+                    "self_device_time_total",
+                    getattr(event, "self_cuda_time_total", 0.0),
+                )
             )
             / 1e3,
             "self_cpu_memory_bytes": int(getattr(event, "self_cpu_memory_usage", 0)),
             "self_cuda_memory_bytes": int(
-                getattr(event, "self_device_memory_usage", getattr(event, "self_cuda_memory_usage", 0))
+                getattr(
+                    event,
+                    "self_device_memory_usage",
+                    getattr(event, "self_cuda_memory_usage", 0),
+                )
             ),
         }
-        for event in sorted(events, key=lambda item: float(getattr(item, "self_cpu_time_total", 0.0)), reverse=True)[:25]
+        for event in sorted(
+            events,
+            key=lambda item: float(getattr(item, "self_cpu_time_total", 0.0)),
+            reverse=True,
+        )[:25]
     )
     allocated_after = int(torch.cuda.memory_allocated())
     return value, ProfileDetails(
@@ -292,7 +357,10 @@ def _export_combined_trace(
     """Export one Chrome trace containing native and named DWDP pipeline ranges."""
 
     with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
         profile_memory=True,
         with_stack=with_stack,
         record_shapes=True,
@@ -305,10 +373,15 @@ def _export_combined_trace(
     profiler.export_chrome_trace(str(path))
 
 
-def _native_hook_diagnostics(native_block: torch.nn.Module, hidden_states: torch.Tensor) -> dict[str, float]:
+def _native_hook_diagnostics(
+    native_block: torch.nn.Module, hidden_states: torch.Tensor
+) -> dict[str, float]:
     """Measure native gate and expert module GPU work without rewriting HF logic."""
 
-    records: dict[str, list[tuple[float, torch.cuda.Event, torch.cuda.Event]]] = {"hf_gate_projection": [], "hf_expert_modules": []}
+    records: dict[str, list[tuple[float, torch.cuda.Event, torch.cuda.Event]]] = {
+        "hf_gate_projection": [],
+        "hf_expert_modules": [],
+    }
 
     def make_hooks(category: str):
         starts: list[tuple[float, torch.cuda.Event]] = []
@@ -319,11 +392,15 @@ def _native_hook_diagnostics(native_block: torch.nn.Module, hidden_states: torch
             event.record()
             starts.append((cpu_start, event))
 
-        def post_hook(_module: torch.nn.Module, _inputs: tuple[object, ...], _output: object) -> None:
+        def post_hook(
+            _module: torch.nn.Module, _inputs: tuple[object, ...], _output: object
+        ) -> None:
             cpu_start, start = starts.pop()
             end = torch.cuda.Event(enable_timing=True)
             end.record()
-            records[category].append(((time.perf_counter() - cpu_start) * 1e3, start, end))
+            records[category].append(
+                ((time.perf_counter() - cpu_start) * 1e3, start, end)
+            )
 
         return pre_hook, post_hook
 
@@ -331,11 +408,21 @@ def _native_hook_diagnostics(native_block: torch.nn.Module, hidden_states: torch
     gate = getattr(native_block, "gate", None)
     if isinstance(gate, torch.nn.Module):
         pre_hook, post_hook = make_hooks("hf_gate_projection")
-        handles.extend((gate.register_forward_pre_hook(pre_hook), gate.register_forward_hook(post_hook)))
+        handles.extend(
+            (
+                gate.register_forward_pre_hook(pre_hook),
+                gate.register_forward_hook(post_hook),
+            )
+        )
     for expert in getattr(native_block, "experts", ()):
         if isinstance(expert, torch.nn.Module):
             pre_hook, post_hook = make_hooks("hf_expert_modules")
-            handles.extend((expert.register_forward_pre_hook(pre_hook), expert.register_forward_hook(post_hook)))
+            handles.extend(
+                (
+                    expert.register_forward_pre_hook(pre_hook),
+                    expert.register_forward_hook(post_hook),
+                )
+            )
     try:
         native_block(hidden_states)
         torch.cuda.synchronize()
@@ -344,7 +431,9 @@ def _native_hook_diagnostics(native_block: torch.nn.Module, hidden_states: torch
             handle.remove()
     result: dict[str, float] = {}
     for category, values in records.items():
-        result[f"{category}_gpu_ms"] = sum(start.elapsed_time(end) for _, start, end in values)
+        result[f"{category}_gpu_ms"] = sum(
+            start.elapsed_time(end) for _, start, end in values
+        )
         result[f"{category}_cpu_ms"] = sum(cpu_ms for cpu_ms, _, _ in values)
     return result
 
@@ -362,7 +451,9 @@ def _create_result_directory(results_root: str | Path) -> Path:
 
 
 def _write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _fmt(value: object, digits: int = 3) -> str:
@@ -379,11 +470,40 @@ def _render_report(payload: dict[str, object]) -> str:
     native = payload["native_hf"]
     dwdp = payload["dwdp"]
     correctness = payload["correctness"]
-    lines = ["# HF vs DWDP MoE Block Profile", "", "## Environment", "", "| Field | Value |", "| --- | --- |"]
-    for key in ("gpu_model", "gpu_memory_bytes", "cuda_version", "pytorch_version", "triton_version", "nvidia_driver_version", "git_commit_hash"):
+    lines = [
+        "# HF vs DWDP MoE Block Profile",
+        "",
+        "## Environment",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+    ]
+    for key in (
+        "gpu_model",
+        "gpu_memory_bytes",
+        "cuda_version",
+        "pytorch_version",
+        "triton_version",
+        "nvidia_driver_version",
+        "git_commit_hash",
+    ):
         lines.append(f"| {key} | {_fmt(environment.get(key))} |")
-    lines.extend(["", "## Configuration", "", "```json", json.dumps(config, indent=2, sort_keys=True), "```", "", "## End-to-End MoE Block", ""])
-    lines.append("| Backend | Median GPU ms | Median CPU orchestration ms | CUDA kernel events | Sync events | Peak GPU bytes |")
+    lines.extend(
+        [
+            "",
+            "## Configuration",
+            "",
+            "```json",
+            json.dumps(config, indent=2, sort_keys=True),
+            "```",
+            "",
+            "## End-to-End MoE Block",
+            "",
+        ]
+    )
+    lines.append(
+        "| Backend | Median GPU ms | Median CPU orchestration ms | CUDA kernel events | Sync events | Peak GPU bytes |"
+    )
     lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
     for label, item in (("Native Hugging Face", native), ("DWDP patched block", dwdp)):
         profile = item["profile"]
@@ -391,7 +511,15 @@ def _render_report(payload: dict[str, object]) -> str:
             f"| {label} | {_fmt(item['gpu_latency_ms'])} | {_fmt(item['cpu_orchestration_ms'])} | "
             f"{_fmt(profile['cuda_kernel_events'])} | {_fmt(profile['synchronization_events'])} | {_fmt(profile['peak_gpu_bytes'], 0)} |"
         )
-    lines.extend(["", "## DWDP Stage Timeline", "", "| Stage | GPU ms | CPU orchestration ms | CUDA kernels | Sync events | Allocation delta bytes | Peak GPU bytes |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"])
+    lines.extend(
+        [
+            "",
+            "## DWDP Stage Timeline",
+            "",
+            "| Stage | GPU ms | CPU orchestration ms | CUDA kernels | Sync events | Allocation delta bytes | Peak GPU bytes |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     for timing in dwdp["stages"]:
         details = dwdp["stage_profiles"][timing["name"]]
         lines.append(
@@ -399,22 +527,43 @@ def _render_report(payload: dict[str, object]) -> str:
             f"{_fmt(details['cuda_kernel_events'])} | {_fmt(details['synchronization_events'])} | "
             f"{_fmt(details['allocation_delta_bytes'], 0)} | {_fmt(details['peak_gpu_bytes'], 0)} |"
         )
-    lines.extend(["", "## Native HF Diagnostics", "", "Native HF does not expose DWDP dispatcher, scheduler, communication planner, or merger stages. The following are module-hook diagnostics, not one-to-one stage equivalents.", ""])
+    lines.extend(
+        [
+            "",
+            "## Native HF Diagnostics",
+            "",
+            "Native HF does not expose DWDP dispatcher, scheduler, communication planner, or merger stages. The following are module-hook diagnostics, not one-to-one stage equivalents.",
+            "",
+        ]
+    )
     lines.append("| Native component | GPU ms | CPU hook ms |")
     lines.append("| --- | ---: | ---: |")
     for name, value in native["hook_diagnostics"].items():
         if name.endswith("_gpu_ms"):
             cpu_name = name.replace("_gpu_ms", "_cpu_ms")
-            lines.append(f"| {name.removesuffix('_gpu_ms')} | {_fmt(value)} | {_fmt(native['hook_diagnostics'].get(cpu_name))} |")
+            lines.append(
+                f"| {name.removesuffix('_gpu_ms')} | {_fmt(value)} | {_fmt(native['hook_diagnostics'].get(cpu_name))} |"
+            )
     lines.extend(["", "## Correctness", "", "| Metric | Value |", "| --- | --- |"])
-    for key in ("torch_allclose", "max_absolute_error", "mean_absolute_error", "rtol", "atol", "shared_parameter_storage"):
+    for key in (
+        "torch_allclose",
+        "max_absolute_error",
+        "mean_absolute_error",
+        "rtol",
+        "atol",
+        "shared_parameter_storage",
+    ):
         lines.append(f"| {key} | {_fmt(correctness.get(key), 6)} |")
     lines.extend(["", "## Where DWDP Loses", ""])
     total_gap = dwdp["gpu_latency_ms"] - native["gpu_latency_ms"]
-    lines.append(f"- Native HF median block GPU latency: `{native['gpu_latency_ms']:.3f} ms`.")
+    lines.append(
+        f"- Native HF median block GPU latency: `{native['gpu_latency_ms']:.3f} ms`."
+    )
     lines.append(f"- DWDP median block GPU latency: `{dwdp['gpu_latency_ms']:.3f} ms`.")
     lines.append(f"- DWDP minus native GPU latency: `{total_gap:.3f} ms`.")
-    lines.append("- Attribute the gap using the DWDP stage table and the top operators in `report.json` / `profiler_trace.json`; do not treat unavailable HF stage rows as zero-cost work.")
+    lines.append(
+        "- Attribute the gap using the DWDP stage table and the top operators in `report.json` / `profiler_trace.json`; do not treat unavailable HF stage rows as zero-cost work."
+    )
     lines.append("")
     return "\n".join(lines)
 
@@ -429,12 +578,18 @@ def main() -> None:
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype).cuda().eval()
+    model = (
+        AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype)
+        .cuda()
+        .eval()
+    )
     specs = discover_qwen_moe_layers(model)
     if not specs:
         raise SystemExit("No supported Qwen-style MoE blocks were discovered")
     if args.layer_index >= len(specs):
-        raise SystemExit(f"--layer-index {args.layer_index} is outside discovered range [0, {len(specs) - 1}]")
+        raise SystemExit(
+            f"--layer-index {args.layer_index} is outside discovered range [0, {len(specs) - 1}]"
+        )
     spec = specs[args.layer_index]
     native_block = spec.module
     dwdp_block = DWDPMoEBlock(
@@ -448,7 +603,13 @@ def main() -> None:
             enable_profiling=False,
         ),
     ).eval()
-    hidden_states = torch.randn(args.batch_size, args.sequence_length, spec.hidden_size, device="cuda", dtype=dtype)
+    hidden_states = torch.randn(
+        args.batch_size,
+        args.sequence_length,
+        spec.hidden_size,
+        device="cuda",
+        dtype=dtype,
+    )
 
     @torch.inference_mode()
     def native_fn() -> torch.Tensor:
@@ -468,7 +629,9 @@ def main() -> None:
     rtol, atol = (3e-2, 3e-2) if dtype == torch.bfloat16 else (2e-2, 2e-2)
     difference = (native_output.float() - dwdp_output.float()).abs()
     correctness = {
-        "torch_allclose": bool(torch.allclose(native_output, dwdp_output, rtol=rtol, atol=atol)),
+        "torch_allclose": bool(
+            torch.allclose(native_output, dwdp_output, rtol=rtol, atol=atol)
+        ),
         "max_absolute_error": float(difference.max().item()),
         "mean_absolute_error": float(difference.mean().item()),
         "rtol": rtol,
@@ -478,27 +641,46 @@ def main() -> None:
     if not correctness["torch_allclose"]:
         raise RuntimeError(f"Native HF and DWDP MoE block parity failed: {correctness}")
 
-    native_gpu_ms, native_cpu_ms, _ = _run_iterations(native_fn, warmup=args.warmup, iterations=args.iterations, staged=False)
-    dwdp_gpu_ms, dwdp_cpu_ms, stage_events = _run_iterations(dwdp_fn, warmup=args.warmup, iterations=args.iterations, staged=True)
+    native_gpu_ms, native_cpu_ms, _ = _run_iterations(
+        native_fn, warmup=args.warmup, iterations=args.iterations, staged=False
+    )
+    dwdp_gpu_ms, dwdp_cpu_ms, stage_events = _run_iterations(
+        dwdp_fn, warmup=args.warmup, iterations=args.iterations, staged=True
+    )
     stage_timings = _aggregate_stage_events(stage_events)
 
-    _, native_profile = _profile_callable("profile.native_hf_moe_block", native_fn, with_stack=args.with_stack)
+    _, native_profile = _profile_callable(
+        "profile.native_hf_moe_block", native_fn, with_stack=args.with_stack
+    )
     stage_profiles: dict[str, ProfileDetails] = {}
 
     # Each profile captures the real stage invocation in one dependency-valid
     # pipeline pass. CUDA events above remain the timing source of truth.
     def profile_stage(name: str, fn: Callable[[], object]) -> object:
-        value, details = _profile_callable(f"profile.dwdp.{name}", fn, with_stack=args.with_stack)
+        value, details = _profile_callable(
+            f"profile.dwdp.{name}", fn, with_stack=args.with_stack
+        )
         stage_profiles[name] = details
         return value
 
     _run_dwdp_staged(dwdp_block, hidden_states, stage_wrapper=profile_stage)
-    _, dwdp_profile = _profile_callable("profile.dwdp_moe_block", dwdp_fn, with_stack=args.with_stack)
+    _, dwdp_profile = _profile_callable(
+        "profile.dwdp_moe_block", dwdp_fn, with_stack=args.with_stack
+    )
     hook_diagnostics = _native_hook_diagnostics(native_block, hidden_states)
 
     output_dir = _create_result_directory(args.results_root)
-    _export_combined_trace(output_dir / "profiler_trace.json", native_fn, dwdp_fn, with_stack=args.with_stack)
-    environment = asdict(collect_environment_metadata(runtime_backend="dwdp_profile", precision=args.dtype, torch_compile=False))
+    _export_combined_trace(
+        output_dir / "profiler_trace.json",
+        native_fn,
+        dwdp_fn,
+        with_stack=args.with_stack,
+    )
+    environment = asdict(
+        collect_environment_metadata(
+            runtime_backend="dwdp_profile", precision=args.dtype, torch_compile=False
+        )
+    )
     config = {
         "model": args.model,
         "layer_index": args.layer_index,
@@ -531,7 +713,9 @@ def main() -> None:
             "cpu_orchestration_ms": dwdp_cpu_ms,
             "profile": asdict(dwdp_profile),
             "stages": [asdict(item) for item in stage_timings],
-            "stage_profiles": {name: asdict(details) for name, details in stage_profiles.items()},
+            "stage_profiles": {
+                name: asdict(details) for name, details in stage_profiles.items()
+            },
         },
         "trace": "profiler_trace.json",
     }

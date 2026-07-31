@@ -42,7 +42,11 @@ def _config_top_k(config: Any) -> int | None:
 
 
 def _looks_like_qwen_moe(module: nn.Module) -> bool:
-    return hasattr(module, "gate") and hasattr(module, "experts") and isinstance(getattr(module, "gate"), nn.Linear)
+    return (
+        hasattr(module, "gate")
+        and hasattr(module, "experts")
+        and isinstance(getattr(module, "gate"), nn.Linear)
+    )
 
 
 def discover_qwen_moe_layers(model: nn.Module) -> tuple[MoELayerSpec, ...]:

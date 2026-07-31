@@ -28,7 +28,9 @@ def synchronize(device: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark the integrated DWDP reference runtime.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark the integrated DWDP reference runtime."
+    )
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--hidden-size", type=int, default=1024)
@@ -42,7 +44,9 @@ def main() -> None:
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but not available")
 
-    experts = [MLPExpert(args.hidden_size).to(args.device) for _ in range(args.num_experts)]
+    experts = [
+        MLPExpert(args.hidden_size).to(args.device) for _ in range(args.num_experts)
+    ]
     runtime = DWDPRuntime.build_reference(
         hidden_size=args.hidden_size,
         num_experts=args.num_experts,
@@ -50,7 +54,9 @@ def main() -> None:
         experts=experts,
         config=RuntimeConfig(device=args.device, enable_workspace=True),
     ).to(args.device)
-    hidden_states = torch.randn(args.batch, args.seq_len, args.hidden_size, device=args.device)
+    hidden_states = torch.randn(
+        args.batch, args.seq_len, args.hidden_size, device=args.device
+    )
 
     with torch.no_grad():
         for _ in range(args.warmup):
@@ -64,10 +70,14 @@ def main() -> None:
     latency = (time.perf_counter() - start) / args.iters
     tokens = args.batch * args.seq_len
     print(f"device={args.device}")
-    print(f"tokens={tokens} hidden_size={args.hidden_size} experts={args.num_experts} top_k={args.top_k}")
+    print(
+        f"tokens={tokens} hidden_size={args.hidden_size} experts={args.num_experts} top_k={args.top_k}"
+    )
     print(f"latency_us={latency * 1e6:.2f}")
     print(f"tokens_per_second={tokens / latency:.2f}")
-    print(f"workspace_bytes={runtime.context.workspaces.estimated_bytes() if runtime.context.workspaces else 0}")
+    print(
+        f"workspace_bytes={runtime.context.workspaces.estimated_bytes() if runtime.context.workspaces else 0}"
+    )
 
 
 if __name__ == "__main__":

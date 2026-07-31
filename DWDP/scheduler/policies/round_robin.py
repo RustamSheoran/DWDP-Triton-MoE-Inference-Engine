@@ -103,9 +103,13 @@ class RoundRobinScheduler(BaseScheduler):
             )
 
         if workspace is None:
-            barrier_after_batch = torch.zeros(active_count, dtype=torch.bool, device=device)
+            barrier_after_batch = torch.zeros(
+                active_count, dtype=torch.bool, device=device
+            )
         else:
-            barrier_after_batch = workspace.get_barrier_buffer(active_count, device=device)
+            barrier_after_batch = workspace.get_barrier_buffer(
+                active_count, device=device
+            )
             barrier_after_batch.zero_()
 
         return SynchronizationMetadata(
@@ -130,8 +134,12 @@ class RoundRobinScheduler(BaseScheduler):
 
         dependency_count = 0
         if workspace is None:
-            dependency_src = torch.empty(dependency_count, dtype=torch.int64, device=device)
-            dependency_dst = torch.empty(dependency_count, dtype=torch.int64, device=device)
+            dependency_src = torch.empty(
+                dependency_count, dtype=torch.int64, device=device
+            )
+            dependency_dst = torch.empty(
+                dependency_count, dtype=torch.int64, device=device
+            )
         else:
             dependency_src, dependency_dst = workspace.get_dependency_buffers(
                 dependency_count,
@@ -163,7 +171,9 @@ class RoundRobinScheduler(BaseScheduler):
             # reduction results through ``Tensor.item()``.
             max_count, min_count = (
                 int(value)
-                for value in torch.stack((active_counts.max(), active_counts.min())).cpu().tolist()
+                for value in torch.stack((active_counts.max(), active_counts.min()))
+                .cpu()
+                .tolist()
             )
 
         return SchedulerStatistics(

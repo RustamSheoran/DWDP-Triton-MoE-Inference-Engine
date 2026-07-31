@@ -63,7 +63,9 @@ class RuntimeProfiler:
         try:
             yield
         finally:
-            self._records.append(ModuleProfile(name, (time.perf_counter() - start) * 1e6))
+            self._records.append(
+                ModuleProfile(name, (time.perf_counter() - start) * 1e6)
+            )
 
     def finish(self, workspace_bytes: int = 0) -> RuntimeProfile | None:
         """Finish profiling and return a runtime profile."""

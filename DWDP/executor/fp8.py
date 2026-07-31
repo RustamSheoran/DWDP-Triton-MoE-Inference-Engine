@@ -74,4 +74,3 @@ def quantize_activations_once(
 
 def _is_fp8(dtype: torch.dtype) -> bool:
     return "float8" in str(dtype)
-

@@ -44,17 +44,39 @@ class SchedulerWorkspace:
         active_count: int,
         *,
         device: torch.device,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         """Return reusable buffers sized by active expert count."""
 
         return (
-            self._ensure_1d("execution_order", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("expert_queue", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("expert_starts", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("expert_ends", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("expert_counts", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("execution_priority", active_count, dtype=torch.int64, device=device),
-            self._ensure_1d("stream_assignments", active_count, dtype=torch.int64, device=device),
+            self._ensure_1d(
+                "execution_order", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "expert_queue", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "expert_starts", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "expert_ends", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "expert_counts", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "execution_priority", active_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "stream_assignments", active_count, dtype=torch.int64, device=device
+            ),
         )
 
     def get_barrier_buffer(
@@ -81,8 +103,12 @@ class SchedulerWorkspace:
         """Return reusable dependency edge buffers."""
 
         return (
-            self._ensure_1d("dependency_src", dependency_count, dtype=torch.int64, device=device),
-            self._ensure_1d("dependency_dst", dependency_count, dtype=torch.int64, device=device),
+            self._ensure_1d(
+                "dependency_src", dependency_count, dtype=torch.int64, device=device
+            ),
+            self._ensure_1d(
+                "dependency_dst", dependency_count, dtype=torch.int64, device=device
+            ),
         )
 
     def estimated_bytes(self) -> int:

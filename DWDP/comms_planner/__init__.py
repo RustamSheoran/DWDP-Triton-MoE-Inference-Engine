@@ -14,7 +14,11 @@ from .metadata import (
     SynchronizationMetadata,
     TransferDescriptor,
 )
-from .registry import build_communication_planner, get_communication_planner_class, register_communication_planner
+from .registry import (
+    build_communication_planner,
+    get_communication_planner_class,
+    register_communication_planner,
+)
 from .static import StaticCommunicationPlanner
 from .topology import CommunicationDomain, TopologyMetadata
 from .workspace import CommunicationPlannerWorkspace

@@ -44,9 +44,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--iters", type=int, default=5)
-    parser.add_argument("--quantization", choices=("fp16", "fp8", "4bit", "8bit"), default="fp8")
+    parser.add_argument(
+        "--quantization", choices=("fp16", "fp8", "4bit", "8bit"), default="fp8"
+    )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--hf-token", "--use", dest="hf_token", default=None, help="Hugging Face token; also read from HF_TOKEN.")
+    parser.add_argument(
+        "--hf-token",
+        "--use",
+        dest="hf_token",
+        default=None,
+        help="Hugging Face token; also read from HF_TOKEN.",
+    )
     profile_group = parser.add_mutually_exclusive_group()
     profile_group.add_argument(
         "--profile",
@@ -61,11 +69,26 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Skip detailed profiling for a faster benchmark.",
     )
-    parser.add_argument("--results-root", default="results", help="Directory for timestamped benchmark reports.")
-    parser.add_argument("--output-json", default=None, help="Optional path for machine-readable results.")
+    parser.add_argument(
+        "--results-root",
+        default="results",
+        help="Directory for timestamped benchmark reports.",
+    )
+    parser.add_argument(
+        "--output-json",
+        default=None,
+        help="Optional path for machine-readable results.",
+    )
     args = parser.parse_args()
-    if args.batch_size <= 0 or args.max_new_tokens <= 0 or args.warmup < 0 or args.iters <= 0:
-        parser.error("--batch-size, --max-new-tokens, and --iters must be > 0; --warmup must be >= 0")
+    if (
+        args.batch_size <= 0
+        or args.max_new_tokens <= 0
+        or args.warmup < 0
+        or args.iters <= 0
+    ):
+        parser.error(
+            "--batch-size, --max-new-tokens, and --iters must be > 0; --warmup must be >= 0"
+        )
     if args.sequence_length is not None and args.sequence_length <= 0:
         parser.error("--sequence-length must be > 0 when provided")
     return args
@@ -96,7 +119,6 @@ def load_kwargs(mode: str, token: str | None = None) -> dict[str, Any]:
     if token:
         kwargs["token"] = token
     return kwargs
-
 
 
 def input_device(model: Any) -> torch.device:
@@ -133,7 +155,10 @@ def make_inputs(
             add_generation_prompt=True,
         )
     prompts = [prompt] * args.batch_size
-    tokenization_kwargs: dict[str, Any] = {"return_tensors": "pt", "padding": args.batch_size > 1}
+    tokenization_kwargs: dict[str, Any] = {
+        "return_tensors": "pt",
+        "padding": args.batch_size > 1,
+    }
     if args.sequence_length is not None:
         tokenization_kwargs.update(
             {
@@ -153,18 +178,23 @@ def synchronize() -> None:
             torch.cuda.synchronize()
 
 
-def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> dict[str, Any]:
+def profile_generation(
+    model: Any, tokenizer: Any, args: argparse.Namespace
+) -> dict[str, Any]:
     """Collect a one-generation Torch profiler summary by useful categories."""
 
     activities = [torch.profiler.ProfilerActivity.CPU]
     if torch.cuda.is_available():
         activities.append(torch.profiler.ProfilerActivity.CUDA)
     inputs = make_inputs(tokenizer, model, args.prompt, args)
-    with torch.inference_mode(), torch.profiler.profile(
-        activities=activities,
-        record_shapes=False,
-        profile_memory=True,
-    ) as profiler:
+    with (
+        torch.inference_mode(),
+        torch.profiler.profile(
+            activities=activities,
+            record_shapes=False,
+            profile_memory=True,
+        ) as profiler,
+    ):
         model.generate(**inputs, max_new_tokens=args.max_new_tokens, do_sample=False)
 
     categories = {
@@ -176,18 +206,37 @@ def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> 
         "executor": ("dwdp.executor",),
         "merger": ("dwdp.merger",),
         "gather": ("dwdp.gather", "aten::index", "aten::index_select"),
-        "gemms": ("dwdp.expert_gemms", "aten::mm", "aten::addmm", "aten::bmm", "aten::matmul"),
+        "gemms": (
+            "dwdp.expert_gemms",
+            "aten::mm",
+            "aten::addmm",
+            "aten::bmm",
+            "aten::matmul",
+        ),
         "copies": ("aten::copy_", "aten::_to_copy", "aten::to"),
         "synchronization": ("benchmark.synchronization", "cuda_synchronize"),
     }
     summary: dict[str, Any] = {}
     events = profiler.key_averages()
     for category, patterns in categories.items():
-        matching = [event for event in events if any(pattern in event.key.lower() for pattern in patterns)]
+        matching = [
+            event
+            for event in events
+            if any(pattern in event.key.lower() for pattern in patterns)
+        ]
         summary[category] = {
-            "cpu_ms": sum(float(getattr(event, "self_cpu_time_total", 0.0)) for event in matching) / 1000.0,
+            "cpu_ms": sum(
+                float(getattr(event, "self_cpu_time_total", 0.0)) for event in matching
+            )
+            / 1000.0,
             "device_ms": sum(
-                float(getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0)))
+                float(
+                    getattr(
+                        event,
+                        "self_device_time_total",
+                        getattr(event, "self_cuda_time_total", 0.0),
+                    )
+                )
                 for event in matching
             )
             / 1000.0,
@@ -198,17 +247,27 @@ def profile_generation(model: Any, tokenizer: Any, args: argparse.Namespace) -> 
             "operator": event.key,
             "self_cpu_ms": float(getattr(event, "self_cpu_time_total", 0.0)) / 1000.0,
             "self_device_ms": float(
-                getattr(event, "self_device_time_total", getattr(event, "self_cuda_time_total", 0.0))
+                getattr(
+                    event,
+                    "self_device_time_total",
+                    getattr(event, "self_cuda_time_total", 0.0),
+                )
             )
             / 1000.0,
             "calls": int(event.count),
         }
-        for event in sorted(events, key=lambda item: float(getattr(item, "self_cpu_time_total", 0.0)), reverse=True)[:30]
+        for event in sorted(
+            events,
+            key=lambda item: float(getattr(item, "self_cpu_time_total", 0.0)),
+            reverse=True,
+        )[:30]
     ]
     return summary
 
 
-def measure_prefill(model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace) -> float:
+def measure_prefill(
+    model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace
+) -> float:
     """Measure prompt-only forward latency, excluding token sampling/decoding."""
 
     with torch.inference_mode():
@@ -222,7 +281,9 @@ def measure_prefill(model: Any, inputs: dict[str, torch.Tensor], args: argparse.
     return (time.perf_counter() - start) * 1e3 / args.iters
 
 
-def measure_ttft(model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace) -> float:
+def measure_ttft(
+    model: Any, inputs: dict[str, torch.Tensor], args: argparse.Namespace
+) -> float:
     """Measure time to generate the first token (prefill plus first decode)."""
 
     with torch.inference_mode():
@@ -241,7 +302,9 @@ def profiled_cpu_ms(profile: dict[str, Any], name: str) -> float | None:
     return float(value) if value is not None else None
 
 
-def benchmark(model: Any, tokenizer: Any, args: argparse.Namespace) -> tuple[dict[str, Any], str, list[int]]:
+def benchmark(
+    model: Any, tokenizer: Any, args: argparse.Namespace
+) -> tuple[dict[str, Any], str, list[int]]:
     inputs = make_inputs(tokenizer, model, args.prompt, args)
     generation_kwargs = {"max_new_tokens": args.max_new_tokens, "do_sample": False}
     if torch.cuda.is_available():
@@ -287,7 +350,9 @@ def release(model: Any) -> None:
 def main() -> None:
     args = parse_args()
     if not torch.cuda.is_available():
-        raise SystemExit("A CUDA runtime is required. In Colab select Runtime > Change runtime type > T4 GPU.")
+        raise SystemExit(
+            "A CUDA runtime is required. In Colab select Runtime > Change runtime type > T4 GPU."
+        )
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -306,7 +371,9 @@ def main() -> None:
 
     print("\nLoading native Hugging Face model...")
     hf_load_start = time.perf_counter()
-    hf_model = AutoModelForCausalLM.from_pretrained(args.model, **load_kwargs(args.quantization, token))
+    hf_model = AutoModelForCausalLM.from_pretrained(
+        args.model, **load_kwargs(args.quantization, token)
+    )
     hf_load_time_ms = (time.perf_counter() - hf_load_start) * 1e3
     hf_model.eval()
     hf_metrics, hf_text, hf_token_ids = benchmark(hf_model, tokenizer, args)
@@ -329,7 +396,9 @@ def main() -> None:
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
     dwdp_metrics, dwdp_text, dwdp_token_ids = benchmark(dwdp_runtime, tokenizer, args)
-    dwdp_profile = profile_generation(dwdp_runtime, tokenizer, args) if args.profile else {}
+    dwdp_profile = (
+        profile_generation(dwdp_runtime, tokenizer, args) if args.profile else {}
+    )
     print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}")
     print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}")
     print(f"dwdp_output={dwdp_text!r}")
@@ -357,7 +426,9 @@ def main() -> None:
         prompt=args.prompt,
         batch_size=args.batch_size,
         sequence_length=int(hf_metrics["input_tokens"]),
-        generation=GenerationConfig(max_new_tokens=args.max_new_tokens, do_sample=False),
+        generation=GenerationConfig(
+            max_new_tokens=args.max_new_tokens, do_sample=False
+        ),
         dtype="float16_compute",
         device="cuda",
         random_seed=args.seed,
@@ -375,17 +446,34 @@ def main() -> None:
             "random_seed": args.seed,
         },
     )
-    stage_names = ("router", "dispatcher", "scheduler", "comms_planner", "executor", "merger")
+    stage_names = (
+        "router",
+        "dispatcher",
+        "scheduler",
+        "comms_planner",
+        "executor",
+        "merger",
+    )
     stage_values = {name: profiled_cpu_ms(dwdp_profile, name) for name in stage_names}
     stage_total = sum(value for value in stage_values.values() if value is not None)
     stage_percentages = {
-        name: (value / stage_total * 100.0 if value is not None and stage_total else None)
+        name: (
+            value / stage_total * 100.0 if value is not None and stage_total else None
+        )
         for name, value in stage_values.items()
     }
-    latency_change_pct = (dwdp_metrics["latency_ms"] / hf_metrics["latency_ms"] - 1.0) * 100.0
-    throughput_change_pct = (dwdp_metrics["tokens_per_second"] / hf_metrics["tokens_per_second"] - 1.0) * 100.0
+    latency_change_pct = (
+        dwdp_metrics["latency_ms"] / hf_metrics["latency_ms"] - 1.0
+    ) * 100.0
+    throughput_change_pct = (
+        dwdp_metrics["tokens_per_second"] / hf_metrics["tokens_per_second"] - 1.0
+    ) * 100.0
     memory_change_pct = (
-        (dwdp_metrics["peak_gpu_memory_bytes"] / hf_metrics["peak_gpu_memory_bytes"] - 1.0) * 100.0
+        (
+            dwdp_metrics["peak_gpu_memory_bytes"] / hf_metrics["peak_gpu_memory_bytes"]
+            - 1.0
+        )
+        * 100.0
         if hf_metrics["peak_gpu_memory_bytes"]
         else None
     )
@@ -415,7 +503,9 @@ def main() -> None:
                 decode_latency_ms=hf_metrics["decode_latency_ms"],
                 tokens_per_second=hf_metrics["tokens_per_second"],
                 total_runtime_ms=hf_metrics["latency_ms"],
-                memory=MemoryMetrics(peak_gpu_memory_bytes=hf_metrics["peak_gpu_memory_bytes"]),
+                memory=MemoryMetrics(
+                    peak_gpu_memory_bytes=hf_metrics["peak_gpu_memory_bytes"]
+                ),
             ),
             dwdp=BackendPerformance(
                 backend="dwdp",
@@ -424,7 +514,9 @@ def main() -> None:
                 decode_latency_ms=dwdp_metrics["decode_latency_ms"],
                 tokens_per_second=dwdp_metrics["tokens_per_second"],
                 total_runtime_ms=dwdp_metrics["latency_ms"],
-                memory=MemoryMetrics(peak_gpu_memory_bytes=dwdp_metrics["peak_gpu_memory_bytes"]),
+                memory=MemoryMetrics(
+                    peak_gpu_memory_bytes=dwdp_metrics["peak_gpu_memory_bytes"]
+                ),
             ),
             runtime_breakdown=RuntimeBreakdown(
                 router_ms=stage_values["router"],

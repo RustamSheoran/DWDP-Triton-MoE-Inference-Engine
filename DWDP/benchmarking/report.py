@@ -63,7 +63,9 @@ def _profile_rows(payload: object) -> list[tuple[str, float | None, float | None
         if name == "top_operators" or not isinstance(value, dict):
             continue
         operators = value.get("operators", ())
-        rows.append((name, value.get("cpu_ms"), value.get("device_ms"), ", ".join(operators)))
+        rows.append(
+            (name, value.get("cpu_ms"), value.get("device_ms"), ", ".join(operators))
+        )
     return rows
 
 
@@ -81,7 +83,9 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append(f"- Experiment: `{report.metadata.experiment_name}`")
     lines.append(f"- Model: `{cfg.model_name}`")
     lines.append(f"- Checkpoint: `{cfg.checkpoint}`")
-    lines.append(f"- Backend comparison: `{perf.huggingface.backend}` vs `{perf.dwdp.backend}`")
+    lines.append(
+        f"- Backend comparison: `{perf.huggingface.backend}` vs `{perf.dwdp.backend}`"
+    )
     lines.append(f"- Timestamp: `{env.benchmark_timestamp}`")
     lines.append("")
     lines.append("# Environment")
@@ -125,7 +129,9 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append("")
     lines.append("# Performance Results")
     lines.append("")
-    lines.append("| Backend | TTFT ms | Prefill ms | Decode ms | Tokens/s | Total ms | Peak GPU bytes |")
+    lines.append(
+        "| Backend | TTFT ms | Prefill ms | Decode ms | Tokens/s | Total ms | Peak GPU bytes |"
+    )
     lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
     for item in (perf.huggingface, perf.dwdp):
         lines.append(
@@ -140,23 +146,39 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append("| --- | ---: | ---: | ---: |")
     for label, reference, candidate in (
         ("TTFT ms", perf.huggingface.ttft_ms, perf.dwdp.ttft_ms),
-        ("Prefill ms", perf.huggingface.prefill_latency_ms, perf.dwdp.prefill_latency_ms),
+        (
+            "Prefill ms",
+            perf.huggingface.prefill_latency_ms,
+            perf.dwdp.prefill_latency_ms,
+        ),
         ("Decode ms", perf.huggingface.decode_latency_ms, perf.dwdp.decode_latency_ms),
         ("Tokens/s", perf.huggingface.tokens_per_second, perf.dwdp.tokens_per_second),
-        ("Total latency ms", perf.huggingface.total_runtime_ms, perf.dwdp.total_runtime_ms),
+        (
+            "Total latency ms",
+            perf.huggingface.total_runtime_ms,
+            perf.dwdp.total_runtime_ms,
+        ),
         (
             "Peak GPU memory bytes",
             perf.huggingface.memory.peak_gpu_memory_bytes,
             perf.dwdp.memory.peak_gpu_memory_bytes,
         ),
     ):
-        lines.append(f"| {label} | {_fmt(reference)} | {_fmt(candidate)} | {_change_pct(candidate, reference)} |")
-    latency_change = _change_pct(perf.dwdp.total_runtime_ms, perf.huggingface.total_runtime_ms)
-    throughput_change = _change_pct(perf.dwdp.tokens_per_second, perf.huggingface.tokens_per_second)
+        lines.append(
+            f"| {label} | {_fmt(reference)} | {_fmt(candidate)} | {_change_pct(candidate, reference)} |"
+        )
+    latency_change = _change_pct(
+        perf.dwdp.total_runtime_ms, perf.huggingface.total_runtime_ms
+    )
+    throughput_change = _change_pct(
+        perf.dwdp.tokens_per_second, perf.huggingface.tokens_per_second
+    )
     if latency_change != "N/A":
         direction = "faster" if float(latency_change.strip("+%")) < 0 else "slower"
         lines.append("")
-        lines.append(f"**Summary:** DWDP is {abs(float(latency_change.strip('+%'))):.2f}% {direction} than native HF by end-to-end latency.")
+        lines.append(
+            f"**Summary:** DWDP is {abs(float(latency_change.strip('+%'))):.2f}% {direction} than native HF by end-to-end latency."
+        )
         lines.append(f"DWDP throughput is {throughput_change} versus native HF.")
     lines.append("")
     lines.append("# Runtime Breakdown")
@@ -173,7 +195,9 @@ def render_markdown(report: BenchmarkReport) -> str:
     ):
         pct = breakdown.module_percentages.get(name.lower().replace(" ", "_"))
         lines.append(f"| {name} | {_fmt(value)} | {_fmt(pct, '%')} |")
-    lines.append(f"| Total DWDP Overhead | {_fmt(breakdown.total_dwdp_overhead_ms)} | N/A |")
+    lines.append(
+        f"| Total DWDP Overhead | {_fmt(breakdown.total_dwdp_overhead_ms)} | N/A |"
+    )
     lines.append("")
     lines.append("# Correctness Validation")
     lines.append("")
@@ -184,11 +208,19 @@ def render_markdown(report: BenchmarkReport) -> str:
     lines.append(f"| Relative Error | {_fmt(correctness.relative_error)} |")
     lines.append(f"| Cosine Similarity | {_fmt(correctness.cosine_similarity)} |")
     lines.append(f"| torch.allclose | {_bool(correctness.torch_allclose)} |")
-    lines.append(f"| Generated Token Parity | {_bool(correctness.generated_token_parity)} |")
+    lines.append(
+        f"| Generated Token Parity | {_bool(correctness.generated_token_parity)} |"
+    )
     lines.append(f"| Layer Output Parity | {_bool(correctness.layer_output_parity)} |")
-    lines.append(f"| Router Output Parity | {_bool(correctness.router_output_parity)} |")
-    lines.append(f"| Executor Output Parity | {_bool(correctness.executor_output_parity)} |")
-    lines.append(f"| Merger Output Parity | {_bool(correctness.merger_output_parity)} |")
+    lines.append(
+        f"| Router Output Parity | {_bool(correctness.router_output_parity)} |"
+    )
+    lines.append(
+        f"| Executor Output Parity | {_bool(correctness.executor_output_parity)} |"
+    )
+    lines.append(
+        f"| Merger Output Parity | {_bool(correctness.merger_output_parity)} |"
+    )
     lines.append("")
     lines.append("# Memory Usage")
     lines.append("")
@@ -220,7 +252,9 @@ def render_markdown(report: BenchmarkReport) -> str:
             lines.append("| Category | CPU self ms | Device self ms | Operators |")
             lines.append("| --- | ---: | ---: | --- |")
             for name, cpu_ms, device_ms, operators in rows:
-                lines.append(f"| {name} | {_fmt(cpu_ms)} | {_fmt(device_ms)} | {operators or 'N/A'} |")
+                lines.append(
+                    f"| {name} | {_fmt(cpu_ms)} | {_fmt(device_ms)} | {operators or 'N/A'} |"
+                )
             top_operators = report.profiler.get(backend, {}).get("top_operators", [])
             if top_operators:
                 lines.append("")

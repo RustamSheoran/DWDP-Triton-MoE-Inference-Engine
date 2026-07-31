@@ -13,7 +13,9 @@ def synchronize() -> None:
         torch.cuda.synchronize()
 
 
-def time_generate(runtime, tokenizer, prompt: str, max_new_tokens: int, warmup: int, iters: int) -> float:
+def time_generate(
+    runtime, tokenizer, prompt: str, max_new_tokens: int, warmup: int, iters: int
+) -> float:
     inputs = tokenizer(prompt, return_tensors="pt") if tokenizer is not None else prompt
     for _ in range(warmup):
         if tokenizer is not None:
@@ -32,7 +34,9 @@ def time_generate(runtime, tokenizer, prompt: str, max_new_tokens: int, warmup: 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare Hugging Face and DWDP adapter generation latency.")
+    parser = argparse.ArgumentParser(
+        description="Compare Hugging Face and DWDP adapter generation latency."
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt", default="Hello")
     parser.add_argument("--max-new-tokens", type=int, default=32)
@@ -47,7 +51,14 @@ def main() -> None:
         device_map=args.device if args.device != "cpu" else None,
     )
     tokenizer = getattr(dwdp_runtime.adapter, "tokenizer", None)
-    latency = time_generate(dwdp_runtime, tokenizer, args.prompt, args.max_new_tokens, args.warmup, args.iters)
+    latency = time_generate(
+        dwdp_runtime,
+        tokenizer,
+        args.prompt,
+        args.max_new_tokens,
+        args.warmup,
+        args.iters,
+    )
     print("backend=dwdp")
     print(f"latency_us={latency * 1e6:.2f}")
     print(f"tokens_per_second={args.max_new_tokens / latency:.2f}")

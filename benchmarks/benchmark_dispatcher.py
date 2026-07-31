@@ -95,7 +95,9 @@ def main() -> None:
         weight_dtype=weight_dtype,
         device=args.device,
     )
-    dispatcher = ExpertMajorDispatcher(DispatcherConfig(num_experts=args.num_experts)).eval()
+    dispatcher = ExpertMajorDispatcher(
+        DispatcherConfig(num_experts=args.num_experts)
+    ).eval()
     sort_dispatcher = ExpertMajorDispatcher(
         DispatcherConfig(num_experts=args.num_experts, algorithm="stable_sort")
     ).eval()
@@ -206,18 +208,26 @@ def main() -> None:
         scatter_plan = run_scatter_with_workspace()
         sort_plan = run_sort_with_workspace()
 
-    if not torch.equal(scatter_plan.assignments.expert_ids, sort_plan.assignments.expert_ids):
-        raise RuntimeError("counting_scatter and stable_sort produced different expert ids")
+    if not torch.equal(
+        scatter_plan.assignments.expert_ids, sort_plan.assignments.expert_ids
+    ):
+        raise RuntimeError(
+            "counting_scatter and stable_sort produced different expert ids"
+        )
     if not torch.equal(
         scatter_plan.assignments.packed_token_indices,
         sort_plan.assignments.packed_token_indices,
     ):
-        raise RuntimeError("counting_scatter and stable_sort produced different packed token indices")
+        raise RuntimeError(
+            "counting_scatter and stable_sort produced different packed token indices"
+        )
     if not torch.allclose(
         scatter_plan.assignments.packed_routing_weights,
         sort_plan.assignments.packed_routing_weights,
     ):
-        raise RuntimeError("counting_scatter and stable_sort produced different packed routing weights")
+        raise RuntimeError(
+            "counting_scatter and stable_sort produced different packed routing weights"
+        )
 
     num_assignments = args.tokens * args.top_k
     scatter_throughput = num_assignments / scatter_with_workspace_seconds
@@ -236,13 +246,23 @@ def main() -> None:
     print(f"device={args.device} dtype={args.dtype}")
     print(f"tokens={args.tokens} experts={args.num_experts} top_k={args.top_k}")
     print(f"assignments={num_assignments}")
-    print(f"counting_scatter_latency_no_workspace_us={scatter_no_workspace_seconds * 1e6:.2f}")
-    print(f"counting_scatter_latency_with_workspace_us={scatter_with_workspace_seconds * 1e6:.2f}")
+    print(
+        f"counting_scatter_latency_no_workspace_us={scatter_no_workspace_seconds * 1e6:.2f}"
+    )
+    print(
+        f"counting_scatter_latency_with_workspace_us={scatter_with_workspace_seconds * 1e6:.2f}"
+    )
     print(f"stable_sort_latency_no_workspace_us={sort_no_workspace_seconds * 1e6:.2f}")
-    print(f"stable_sort_latency_with_workspace_us={sort_with_workspace_seconds * 1e6:.2f}")
-    print(f"counting_scatter_throughput_assignments_per_second={scatter_throughput:.2f}")
+    print(
+        f"stable_sort_latency_with_workspace_us={sort_with_workspace_seconds * 1e6:.2f}"
+    )
+    print(
+        f"counting_scatter_throughput_assignments_per_second={scatter_throughput:.2f}"
+    )
     print(f"stable_sort_throughput_assignments_per_second={sort_throughput:.2f}")
-    print(f"counting_scatter_vs_sort_speedup={sort_with_workspace_seconds / scatter_with_workspace_seconds:.4f}")
+    print(
+        f"counting_scatter_vs_sort_speedup={sort_with_workspace_seconds / scatter_with_workspace_seconds:.4f}"
+    )
     print(f"histogram_us={histogram_seconds * 1e6:.2f}")
     print(f"prefix_sum_us={prefix_seconds * 1e6:.2f}")
     print(f"destination_positions_us={destination_seconds * 1e6:.2f}")

@@ -76,7 +76,9 @@ def collect_environment_metadata(
         if torch.cuda.is_available():
             device = torch.cuda.current_device()
             gpu_model = torch.cuda.get_device_name(device)
-            gpu_memory_bytes = int(torch.cuda.get_device_properties(device).total_memory)
+            gpu_memory_bytes = int(
+                torch.cuda.get_device_properties(device).total_memory
+            )
     except Exception:
         pass
 

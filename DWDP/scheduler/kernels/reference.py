@@ -12,7 +12,15 @@ def reference_round_robin_schedule(
     *,
     stream_count: int,
     workspace: SchedulerWorkspace | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Reference scheduling boundary for Round Robin metadata generation."""
 
     return build_round_robin_schedule(

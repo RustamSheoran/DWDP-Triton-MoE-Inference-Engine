@@ -21,12 +21,18 @@ from DWDP.router import RouterOutput
 def _parse_int_list(value: str) -> tuple[int, ...]:
     values = tuple(int(item) for item in value.split(",") if item)
     if not values or any(item <= 0 for item in values):
-        raise argparse.ArgumentTypeError("expected a non-empty comma-separated list of positive integers")
+        raise argparse.ArgumentTypeError(
+            "expected a non-empty comma-separated list of positive integers"
+        )
     return values
 
 
-def make_router_output(tokens: int, top_k: int, num_experts: int, device: str) -> RouterOutput:
-    topk_indices = torch.randint(0, num_experts, (tokens, top_k), dtype=torch.int64, device=device)
+def make_router_output(
+    tokens: int, top_k: int, num_experts: int, device: str
+) -> RouterOutput:
+    topk_indices = torch.randint(
+        0, num_experts, (tokens, top_k), dtype=torch.int64, device=device
+    )
     topk_weights = torch.rand((tokens, top_k), dtype=torch.float32, device=device)
     return RouterOutput(
         router_logits=torch.empty(0, device=device),
@@ -64,23 +70,51 @@ def _kernel_count(fn: Callable[[], object]) -> int | None:
         return None
     with profile(activities=[ProfilerActivity.CUDA]) as profiler:
         fn()
-    return sum(event.count for event in profiler.key_averages() if event.device_type.name == "CUDA")
+    return sum(
+        event.count
+        for event in profiler.key_averages()
+        if event.device_type.name == "CUDA"
+    )
 
 
 def _assert_parity(reference_plan, triton_plan) -> None:
-    assert torch.equal(reference_plan.metadata.expert_counts, triton_plan.metadata.expert_counts)
-    assert torch.equal(reference_plan.metadata.expert_offsets, triton_plan.metadata.expert_offsets)
-    assert torch.equal(reference_plan.metadata.token_permutation, triton_plan.metadata.token_permutation)
-    assert torch.equal(reference_plan.metadata.inverse_permutation, triton_plan.metadata.inverse_permutation)
-    assert torch.equal(reference_plan.assignments.expert_ids, triton_plan.assignments.expert_ids)
-    assert torch.equal(reference_plan.assignments.packed_token_indices, triton_plan.assignments.packed_token_indices)
-    assert torch.equal(reference_plan.assignments.packed_routing_weights, triton_plan.assignments.packed_routing_weights)
+    assert torch.equal(
+        reference_plan.metadata.expert_counts, triton_plan.metadata.expert_counts
+    )
+    assert torch.equal(
+        reference_plan.metadata.expert_offsets, triton_plan.metadata.expert_offsets
+    )
+    assert torch.equal(
+        reference_plan.metadata.token_permutation,
+        triton_plan.metadata.token_permutation,
+    )
+    assert torch.equal(
+        reference_plan.metadata.inverse_permutation,
+        triton_plan.metadata.inverse_permutation,
+    )
+    assert torch.equal(
+        reference_plan.assignments.expert_ids, triton_plan.assignments.expert_ids
+    )
+    assert torch.equal(
+        reference_plan.assignments.packed_token_indices,
+        triton_plan.assignments.packed_token_indices,
+    )
+    assert torch.equal(
+        reference_plan.assignments.packed_routing_weights,
+        triton_plan.assignments.packed_routing_weights,
+    )
 
 
-def benchmark_case(tokens: int, num_experts: int, top_k: int, warmup: int, iterations: int) -> None:
+def benchmark_case(
+    tokens: int, num_experts: int, top_k: int, warmup: int, iterations: int
+) -> None:
     router_output = make_router_output(tokens, top_k, num_experts, "cuda")
-    reference = ExpertMajorDispatcher(DispatcherConfig(num_experts=num_experts, algorithm="counting_scatter"))
-    triton = ExpertMajorDispatcher(DispatcherConfig(num_experts=num_experts, algorithm="triton_counting_scatter"))
+    reference = ExpertMajorDispatcher(
+        DispatcherConfig(num_experts=num_experts, algorithm="counting_scatter")
+    )
+    triton = ExpertMajorDispatcher(
+        DispatcherConfig(num_experts=num_experts, algorithm="triton_counting_scatter")
+    )
     reference_workspace = DispatchWorkspace()
     triton_workspace = DispatchWorkspace()
 
@@ -101,7 +135,9 @@ def benchmark_case(tokens: int, num_experts: int, top_k: int, warmup: int, itera
         triton_kernel_count = _kernel_count(run_triton)
 
     assignments = tokens * top_k
-    kernel_count = "unavailable" if triton_kernel_count is None else str(triton_kernel_count)
+    kernel_count = (
+        "unavailable" if triton_kernel_count is None else str(triton_kernel_count)
+    )
     print(
         " ".join(
             (
@@ -122,7 +158,9 @@ def benchmark_case(tokens: int, num_experts: int, top_k: int, warmup: int, itera
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compare reference and tiled Triton DWDP dispatchers.")
+    parser = argparse.ArgumentParser(
+        description="Compare reference and tiled Triton DWDP dispatchers."
+    )
     parser.add_argument("--tokens", type=_parse_int_list, default=(4096, 16384))
     parser.add_argument("--experts", type=_parse_int_list, default=(8, 16, 64, 128))
     parser.add_argument("--top-k", type=_parse_int_list, default=(2, 4, 8))

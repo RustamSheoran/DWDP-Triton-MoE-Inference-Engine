@@ -40,7 +40,10 @@ class QwenSwiGLUExpert(torch.nn.Module):
         self.down_proj = torch.nn.Linear(intermediate_size, hidden_size, bias=False)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        return self.down_proj(torch.nn.functional.silu(self.gate_proj(hidden_states)) * self.up_proj(hidden_states))
+        return self.down_proj(
+            torch.nn.functional.silu(self.gate_proj(hidden_states))
+            * self.up_proj(hidden_states)
+        )
 
 
 def make_registry() -> ExpertRegistry:
@@ -52,7 +55,9 @@ def make_dispatch_plan() -> DispatchPlan:
     assignments = ExpertAssignments(
         expert_ids=torch.tensor([0, 0, 1, 1], dtype=torch.int64),
         packed_token_indices=torch.tensor([0, 2, 1, 3], dtype=torch.int64),
-        packed_routing_weights=torch.tensor([0.5, 1.0, 0.25, 0.75], dtype=torch.float32),
+        packed_routing_weights=torch.tensor(
+            [0.5, 1.0, 0.25, 0.75], dtype=torch.float32
+        ),
     )
     return DispatchPlan(
         assignments=assignments,
@@ -84,8 +89,12 @@ def make_execution_plan() -> ExecutionPlan:
         execution_priority=order,
         stream_assignments=torch.zeros(2, dtype=torch.int64),
         batches=(),
-        synchronization=SchedulerSynchronizationMetadata(torch.zeros(2, dtype=torch.bool)),
-        dependencies=SchedulerDependencyMetadata(torch.empty(0, dtype=torch.int64), torch.empty(0, dtype=torch.int64)),
+        synchronization=SchedulerSynchronizationMetadata(
+            torch.zeros(2, dtype=torch.bool)
+        ),
+        dependencies=SchedulerDependencyMetadata(
+            torch.empty(0, dtype=torch.int64), torch.empty(0, dtype=torch.int64)
+        ),
         statistics=SchedulerStatistics(2, 2, 0, 2, 4, 2, 2, "round_robin"),
         scheduling_policy="round_robin",
         deterministic=True,
@@ -102,8 +111,24 @@ def make_communication_plan() -> CommunicationPlan:
         communication_descriptors=(),
         transfer_descriptors=(),
         communication_groups=(),
-        topology=TopologyMetadata(0, 1, 0, torch.tensor([0], dtype=torch.int64), torch.tensor([0], dtype=torch.int64), None, None, None, (), ((0,),), "single_gpu", 0.0, 0.0),
-        synchronization=CommunicationSynchronizationMetadata(empty_i64, empty_i64, empty_i64, empty_i64),
+        topology=TopologyMetadata(
+            0,
+            1,
+            0,
+            torch.tensor([0], dtype=torch.int64),
+            torch.tensor([0], dtype=torch.int64),
+            None,
+            None,
+            None,
+            (),
+            ((0,),),
+            "single_gpu",
+            0.0,
+            0.0,
+        ),
+        synchronization=CommunicationSynchronizationMetadata(
+            empty_i64, empty_i64, empty_i64, empty_i64
+        ),
         dependencies=CommunicationDependencyMetadata(empty_i64, empty_i64, empty_i64),
         prefetch=PrefetchPlan(empty_i64, empty_i64, empty_f32),
         overlap=OverlapPlan(empty_i64, empty_i64, empty_f32),
@@ -126,7 +151,10 @@ def test_qwen_provider_preserves_original_weight_storage() -> None:
         gate, up = provider.gate_up_weights.for_expert(expert_id)
         assert gate.data_ptr() == expert.gate_proj.weight.data_ptr()
         assert up.data_ptr() == expert.up_proj.weight.data_ptr()
-        assert provider.down_weights.for_expert(expert_id).data_ptr() == expert.down_proj.weight.data_ptr()
+        assert (
+            provider.down_weights.for_expert(expert_id).data_ptr()
+            == expert.down_proj.weight.data_ptr()
+        )
 
 
 def test_qwen_provider_materialization_is_explicit() -> None:
@@ -134,7 +162,9 @@ def test_qwen_provider_materialization_is_explicit() -> None:
     fused = provider.gate_up_weights.materialize()
 
     assert fused.shape == (2, 16, 4)
-    assert fused.data_ptr() not in provider.gate_up_weights.gate_weights.storage_pointers
+    assert (
+        fused.data_ptr() not in provider.gate_up_weights.gate_weights.storage_pointers
+    )
 
 
 def test_triton_skeleton_matches_pytorch_executor() -> None:
@@ -146,11 +176,19 @@ def test_triton_skeleton_matches_pytorch_executor() -> None:
     execution_plan = make_execution_plan()
     communication_plan = make_communication_plan()
 
-    reference_output = reference(hidden_states, dispatch_plan, execution_plan, communication_plan)
-    triton_output = triton(hidden_states, dispatch_plan, execution_plan, communication_plan)
+    reference_output = reference(
+        hidden_states, dispatch_plan, execution_plan, communication_plan
+    )
+    triton_output = triton(
+        hidden_states, dispatch_plan, execution_plan, communication_plan
+    )
 
-    assert torch.allclose(triton_output.packed_expert_outputs, reference_output.packed_expert_outputs)
-    assert torch.allclose(triton_output.weighted_expert_outputs, reference_output.weighted_expert_outputs)
+    assert torch.allclose(
+        triton_output.packed_expert_outputs, reference_output.packed_expert_outputs
+    )
+    assert torch.allclose(
+        triton_output.weighted_expert_outputs, reference_output.weighted_expert_outputs
+    )
     assert triton_output.backend == "triton_reference_fallback"
 
 

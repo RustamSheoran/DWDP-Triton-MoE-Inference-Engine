@@ -16,7 +16,9 @@ def _to_dict(value: Any) -> dict[str, object]:
     return {}
 
 
-def extract_runtime_statistics(pipeline_output: Any, workspace_bytes: int | None = None) -> RuntimeStatistics:
+def extract_runtime_statistics(
+    pipeline_output: Any, workspace_bytes: int | None = None
+) -> RuntimeStatistics:
     """Extract runtime statistics from a `RuntimePipelineOutput`-like object."""
 
     dispatch_plan = getattr(pipeline_output, "dispatch_plan", None)
@@ -53,7 +55,9 @@ def extract_runtime_statistics(pipeline_output: Any, workspace_bytes: int | None
         routing_distribution=routing_distribution,
         dispatcher_statistics=_to_dict(getattr(dispatch_plan, "metadata", None)),
         scheduler_statistics=_to_dict(scheduler_stats),
-        communication_planner_statistics=_to_dict(getattr(communication_plan, "statistics", None)),
+        communication_planner_statistics=_to_dict(
+            getattr(communication_plan, "statistics", None)
+        ),
         executor_statistics=_to_dict(getattr(executor_output, "statistics", None)),
         merger_statistics=_to_dict(getattr(merger_output, "statistics", None)),
     )

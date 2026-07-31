@@ -11,7 +11,9 @@ from DWDP.runtime import DWDPRuntime, RuntimeConfig
 def build_parser() -> argparse.ArgumentParser:
     """Build the benchmark CLI parser."""
 
-    parser = argparse.ArgumentParser(description="Benchmark HF and DWDP runtime wrappers.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark HF and DWDP runtime wrappers."
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--backend", default="hf", choices=("hf", "dwdp"))
     parser.add_argument("--compare", default=None, choices=("hf", "dwdp"))
@@ -23,7 +25,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _time_generation(runtime, tokenizer, prompt: str, max_new_tokens: int, warmup: int, iters: int) -> dict[str, float]:
+def _time_generation(
+    runtime, tokenizer, prompt: str, max_new_tokens: int, warmup: int, iters: int
+) -> dict[str, float]:
     inputs = tokenizer(prompt, return_tensors="pt") if tokenizer is not None else prompt
     for _ in range(warmup):
         if tokenizer is not None:
@@ -52,8 +56,14 @@ def main(argv: list[str] | None = None) -> None:
     """Execute the benchmark CLI."""
 
     args = build_parser().parse_args(argv)
-    primary = DWDPRuntime.from_pretrained(args.model, config=RuntimeConfig(backend=args.backend, device=args.device))
-    tokenizer = getattr(primary.adapter, "tokenizer", None) if hasattr(primary, "adapter") else None
+    primary = DWDPRuntime.from_pretrained(
+        args.model, config=RuntimeConfig(backend=args.backend, device=args.device)
+    )
+    tokenizer = (
+        getattr(primary.adapter, "tokenizer", None)
+        if hasattr(primary, "adapter")
+        else None
+    )
     primary_metrics = _time_generation(
         primary,
         tokenizer,
@@ -67,10 +77,14 @@ def main(argv: list[str] | None = None) -> None:
         print(f"{key}={value:.2f}")
 
     if args.compare is not None:
-        compare = DWDPRuntime.from_pretrained(args.model, config=RuntimeConfig(backend=args.compare, device=args.device))
+        compare = DWDPRuntime.from_pretrained(
+            args.model, config=RuntimeConfig(backend=args.compare, device=args.device)
+        )
         compare_metrics = _time_generation(
             compare,
-            getattr(compare.adapter, "tokenizer", tokenizer) if hasattr(compare, "adapter") else tokenizer,
+            getattr(compare.adapter, "tokenizer", tokenizer)
+            if hasattr(compare, "adapter")
+            else tokenizer,
             args.prompt,
             args.max_new_tokens,
             args.warmup,

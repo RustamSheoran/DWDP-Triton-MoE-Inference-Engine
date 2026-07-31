@@ -6,7 +6,9 @@ from DWDP.cli.run import build_parser as build_run_parser
 
 def test_run_cli_parser() -> None:
     parser = build_run_parser()
-    args = parser.parse_args(["--model", "model", "--backend", "dwdp", "--prompt", "Hello"])
+    args = parser.parse_args(
+        ["--model", "model", "--backend", "dwdp", "--prompt", "Hello"]
+    )
 
     assert args.model == "model"
     assert args.backend == "dwdp"
@@ -15,7 +17,9 @@ def test_run_cli_parser() -> None:
 
 def test_benchmark_cli_parser() -> None:
     parser = build_benchmark_parser()
-    args = parser.parse_args(["--model", "model", "--backend", "hf", "--compare", "dwdp"])
+    args = parser.parse_args(
+        ["--model", "model", "--backend", "hf", "--compare", "dwdp"]
+    )
 
     assert args.model == "model"
     assert args.backend == "hf"

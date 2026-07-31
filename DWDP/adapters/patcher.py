@@ -22,7 +22,9 @@ class ModulePatcher:
     def __init__(self) -> None:
         self.records: list[PatchRecord] = []
 
-    def replace(self, *, name: str, parent: nn.Module, child_name: str, replacement: nn.Module) -> None:
+    def replace(
+        self, *, name: str, parent: nn.Module, child_name: str, replacement: nn.Module
+    ) -> None:
         """Replace `parent.child_name` with `replacement` and store original."""
 
         original = getattr(parent, child_name)

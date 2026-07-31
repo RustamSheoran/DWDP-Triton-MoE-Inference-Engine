@@ -33,8 +33,12 @@ def make_dispatch_plan(
     offsets = torch.cat((counts.new_zeros(1), counts.cumsum(dim=0)), dim=0)
     assignments = ExpertAssignments(
         expert_ids=torch.empty(total_assignments, dtype=torch.int64, device=device),
-        packed_token_indices=torch.empty(total_assignments, dtype=torch.int64, device=device),
-        packed_routing_weights=torch.empty(total_assignments, dtype=torch.float32, device=device),
+        packed_token_indices=torch.empty(
+            total_assignments, dtype=torch.int64, device=device
+        ),
+        packed_routing_weights=torch.empty(
+            total_assignments, dtype=torch.float32, device=device
+        ),
     )
     metadata = DispatchMetadata(
         num_tokens=total_assignments,
@@ -44,9 +48,15 @@ def make_dispatch_plan(
         token_shape=(total_assignments,),
         expert_counts=counts,
         expert_offsets=offsets,
-        token_permutation=torch.empty(total_assignments, dtype=torch.int64, device=device),
-        inverse_permutation=torch.empty(total_assignments, dtype=torch.int64, device=device),
-        destination_positions=torch.empty(total_assignments, dtype=torch.int64, device=device),
+        token_permutation=torch.empty(
+            total_assignments, dtype=torch.int64, device=device
+        ),
+        inverse_permutation=torch.empty(
+            total_assignments, dtype=torch.int64, device=device
+        ),
+        destination_positions=torch.empty(
+            total_assignments, dtype=torch.int64, device=device
+        ),
         stable_order=True,
         algorithm="benchmark",
     )
@@ -131,7 +141,9 @@ def main() -> None:
         plan = run_with_workspace()
 
     active_experts = plan.statistics.num_active_experts
-    throughput = active_experts / with_workspace_seconds if with_workspace_seconds > 0 else 0.0
+    throughput = (
+        active_experts / with_workspace_seconds if with_workspace_seconds > 0 else 0.0
+    )
     output_bytes = (
         estimate_tensor_bytes(plan.execution_order)
         + estimate_tensor_bytes(plan.expert_queue)

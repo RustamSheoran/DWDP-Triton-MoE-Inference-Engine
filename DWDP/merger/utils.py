@@ -22,7 +22,9 @@ def validate_executor_output(executor_output: ExecutorOutput) -> None:
     if packed.ndim != 2 or weighted.ndim != 2:
         raise ValueError("executor output tensors must be rank-2")
     if packed.shape != weighted.shape:
-        raise ValueError("packed and weighted expert outputs must have identical shapes")
+        raise ValueError(
+            "packed and weighted expert outputs must have identical shapes"
+        )
     num_assignments = packed.shape[0]
     if metadata.inverse_permutation.numel() != num_assignments:
         raise ValueError("inverse_permutation length must match num assignments")

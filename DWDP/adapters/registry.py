@@ -25,7 +25,13 @@ def get_adapter_class(name: str) -> type:
         raise KeyError(f"Unknown adapter '{name}'") from exc
 
 
-def build_adapter(name: str, *, model: Any | None = None, tokenizer: Any | None = None, config: RuntimeConfig | None = None):
+def build_adapter(
+    name: str,
+    *,
+    model: Any | None = None,
+    tokenizer: Any | None = None,
+    config: RuntimeConfig | None = None,
+):
     """Instantiate a registered adapter."""
 
     return get_adapter_class(name)(model=model, tokenizer=tokenizer, config=config)
@@ -42,10 +48,16 @@ def detect_adapter_class(model: Any) -> type | None:
 
     config = getattr(model, "config", None)
     model_type = str(getattr(config, "model_type", "")).lower()
-    architectures = tuple(str(item).lower() for item in getattr(config, "architectures", ()) or ())
+    architectures = tuple(
+        str(item).lower() for item in getattr(config, "architectures", ()) or ()
+    )
     model_class = type(model).__name__.lower()
     candidates = (model_type, model_class, *architectures)
     for patterns, adapter_cls in _MODEL_ADAPTER_REGISTRY:
-        if any(pattern.lower() in candidate for pattern in patterns for candidate in candidates):
+        if any(
+            pattern.lower() in candidate
+            for pattern in patterns
+            for candidate in candidates
+        ):
             return adapter_cls
     return None

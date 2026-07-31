@@ -8,7 +8,9 @@ from DWDP.runtime import DWDPRuntime, RuntimeConfig
 def build_parser() -> argparse.ArgumentParser:
     """Build the profile CLI parser."""
 
-    parser = argparse.ArgumentParser(description="Profile a DWDP-compatible generation wrapper.")
+    parser = argparse.ArgumentParser(
+        description="Profile a DWDP-compatible generation wrapper."
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--max-new-tokens", type=int, default=32)
@@ -24,7 +26,11 @@ def main(argv: list[str] | None = None) -> None:
         args.model,
         config=RuntimeConfig(device=args.device, enable_profiling=True),
     )
-    tokenizer = getattr(runtime.adapter, "tokenizer", None) if hasattr(runtime, "adapter") else None
+    tokenizer = (
+        getattr(runtime.adapter, "tokenizer", None)
+        if hasattr(runtime, "adapter")
+        else None
+    )
     if tokenizer is not None:
         inputs = tokenizer(args.prompt, return_tensors="pt")
         runtime.generate(**inputs, max_new_tokens=args.max_new_tokens)

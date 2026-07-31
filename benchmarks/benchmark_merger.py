@@ -22,7 +22,9 @@ def synchronize(device: str) -> None:
         torch.cuda.synchronize()
 
 
-def make_executor_output(tokens: int, top_k: int, hidden_size: int, device: str) -> ExecutorOutput:
+def make_executor_output(
+    tokens: int, top_k: int, hidden_size: int, device: str
+) -> ExecutorOutput:
     num_assignments = tokens * top_k
     packed = torch.randn(num_assignments, hidden_size, device=device)
     weights = torch.rand(num_assignments, device=device)
@@ -33,8 +35,13 @@ def make_executor_output(tokens: int, top_k: int, hidden_size: int, device: str)
         weighted_expert_outputs=weighted,
         expert_outputs=(),
         output_metadata=OutputMetadata(
-            packed_token_indices=torch.arange(num_assignments, dtype=torch.int64, device=device) // top_k,
-            packed_expert_ids=torch.zeros(num_assignments, dtype=torch.int64, device=device),
+            packed_token_indices=torch.arange(
+                num_assignments, dtype=torch.int64, device=device
+            )
+            // top_k,
+            packed_expert_ids=torch.zeros(
+                num_assignments, dtype=torch.int64, device=device
+            ),
             packed_routing_weights=weights,
             token_permutation=inverse,
             inverse_permutation=inverse,
@@ -47,11 +54,15 @@ def make_executor_output(tokens: int, top_k: int, hidden_size: int, device: str)
             expert_starts=torch.empty(0, dtype=torch.int64, device=device),
             expert_ends=torch.empty(0, dtype=torch.int64, device=device),
             stream_assignments=torch.empty(0, dtype=torch.int64, device=device),
-            communication_remote_expert_ids=torch.empty(0, dtype=torch.int64, device=device),
+            communication_remote_expert_ids=torch.empty(
+                0, dtype=torch.int64, device=device
+            ),
             communication_policy="static",
             scheduling_policy="round_robin",
         ),
-        statistics=ExecutionStatistics(0, 0, tokens, num_assignments, hidden_size, hidden_size, "benchmark"),
+        statistics=ExecutionStatistics(
+            0, 0, tokens, num_assignments, hidden_size, hidden_size, "benchmark"
+        ),
         timing=ExecutorTimingMetadata(),
         workspace=ExecutorWorkspaceMetadata(False, 0),
         backend="benchmark",
@@ -83,7 +94,9 @@ def main() -> None:
     if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA requested but not available")
 
-    executor_output = make_executor_output(args.tokens, args.top_k, args.hidden_size, args.device)
+    executor_output = make_executor_output(
+        args.tokens, args.top_k, args.hidden_size, args.device
+    )
     merger = PyTorchMerger(MergerConfig()).eval()
     merger_no_workspace = PyTorchMerger(MergerConfig(enable_workspace=False)).eval()
     workspace = MergerWorkspace()
@@ -95,8 +108,12 @@ def main() -> None:
         return merger_no_workspace(executor_output, workspace=workspace)
 
     with torch.no_grad():
-        with_workspace_seconds = time_callable(run_with_workspace, args.warmup, args.iters, args.device)
-        without_workspace_seconds = time_callable(run_without_workspace, args.warmup, args.iters, args.device)
+        with_workspace_seconds = time_callable(
+            run_with_workspace, args.warmup, args.iters, args.device
+        )
+        without_workspace_seconds = time_callable(
+            run_without_workspace, args.warmup, args.iters, args.device
+        )
         output = run_with_workspace()
 
     throughput = args.tokens / with_workspace_seconds

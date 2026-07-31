@@ -33,7 +33,9 @@ def compare_tensors(
     """Compare tensors with max/mean absolute error and `torch.allclose`."""
 
     if reference.shape != actual.shape:
-        raise ValueError(f"shape mismatch: reference={tuple(reference.shape)} actual={tuple(actual.shape)}")
+        raise ValueError(
+            f"shape mismatch: reference={tuple(reference.shape)} actual={tuple(actual.shape)}"
+        )
     diff = (reference - actual).abs()
     return TensorComparison(
         max_abs_error=float(diff.max().item()) if diff.numel() else 0.0,

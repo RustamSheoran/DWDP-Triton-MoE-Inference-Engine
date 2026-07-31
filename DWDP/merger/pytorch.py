@@ -66,7 +66,9 @@ class PyTorchMerger(BaseMerger):
             assignment_out=assignment_out,
             merged_out=merged_out,
         )
-        hidden_states = merged_flat.reshape(*metadata.token_shape, output_size).contiguous()
+        hidden_states = merged_flat.reshape(
+            *metadata.token_shape, output_size
+        ).contiguous()
 
         merge_metadata = MergeMetadata(
             token_shape=metadata.token_shape,
@@ -85,7 +87,9 @@ class PyTorchMerger(BaseMerger):
         )
         workspace_metadata = WorkspaceMetadata(
             used_workspace=active_workspace is not None,
-            workspace_bytes=active_workspace.estimated_bytes() if active_workspace is not None else 0,
+            workspace_bytes=active_workspace.estimated_bytes()
+            if active_workspace is not None
+            else 0,
         )
         return MergerOutput(
             hidden_states=hidden_states,

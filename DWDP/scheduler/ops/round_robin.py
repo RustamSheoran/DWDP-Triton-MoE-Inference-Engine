@@ -11,7 +11,15 @@ def build_round_robin_schedule(
     *,
     stream_count: int,
     workspace: SchedulerWorkspace | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
     """Build deterministic ascending-expert execution metadata."""
 
     active_experts = torch.nonzero(expert_counts > 0, as_tuple=False).flatten()
@@ -49,7 +57,12 @@ def build_round_robin_schedule(
         stream_assignments,
     ) = workspace.get_active_expert_buffers(active_count, device=expert_counts.device)
 
-    torch.arange(active_count, dtype=torch.int64, device=expert_counts.device, out=execution_order)
+    torch.arange(
+        active_count,
+        dtype=torch.int64,
+        device=expert_counts.device,
+        out=execution_order,
+    )
     expert_queue.copy_(active_experts)
     torch.index_select(expert_offsets, 0, active_experts, out=expert_starts)
     torch.index_select(expert_offsets, 0, active_experts + 1, out=expert_ends)

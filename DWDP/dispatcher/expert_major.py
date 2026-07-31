@@ -9,7 +9,11 @@ from .kernels import reference_expert_major_dispatch
 from .metadata import DispatchMetadata
 from .plan import DispatchPlan
 from .registry import register_dispatcher
-from .utils import flatten_router_output, maybe_reuse_router_metadata, validate_router_output
+from .utils import (
+    flatten_router_output,
+    maybe_reuse_router_metadata,
+    validate_router_output,
+)
 from .workspace import DispatchWorkspace
 
 

@@ -68,14 +68,22 @@ def build_persistent_tile_queues(
 
     host_fields = workspace.tensorlist_host_fields
     if host_fields is None:
-        raise ValueError("TensorList host metadata must belong to the executor workspace")
+        raise ValueError(
+            "TensorList host metadata must belong to the executor workspace"
+        )
     gather_size = 0
     down_size = 0
     for descriptor in range(tensors.size):
         m = int(host_fields["m"][descriptor])
-        gather_size += _ceil_div(m, _BLOCK_M) * _ceil_div(int(host_fields["intermediate_n"][descriptor]), _BLOCK_N)
-        down_size += _ceil_div(m, _BLOCK_M) * _ceil_div(int(host_fields["n"][descriptor]), _BLOCK_N)
-    workspace.ensure_persistent_queue_capacity(max(gather_size, down_size), device=tensors.input_ptrs.device)
+        gather_size += _ceil_div(m, _BLOCK_M) * _ceil_div(
+            int(host_fields["intermediate_n"][descriptor]), _BLOCK_N
+        )
+        down_size += _ceil_div(m, _BLOCK_M) * _ceil_div(
+            int(host_fields["n"][descriptor]), _BLOCK_N
+        )
+    workspace.ensure_persistent_queue_capacity(
+        max(gather_size, down_size), device=tensors.input_ptrs.device
+    )
     gather_host = workspace._persistent_gather_host
     down_host = workspace._persistent_down_host
     assert gather_host is not None and down_host is not None
@@ -84,7 +92,9 @@ def build_persistent_tile_queues(
     down_index = 0
     for descriptor in range(tensors.size):
         m_tiles = _ceil_div(int(host_fields["m"][descriptor]), _BLOCK_M)
-        gather_n_tiles = _ceil_div(int(host_fields["intermediate_n"][descriptor]), _BLOCK_N)
+        gather_n_tiles = _ceil_div(
+            int(host_fields["intermediate_n"][descriptor]), _BLOCK_N
+        )
         down_n_tiles = _ceil_div(int(host_fields["n"][descriptor]), _BLOCK_N)
         for tile_m in range(m_tiles):
             for tile_n in range(gather_n_tiles):
@@ -99,10 +109,14 @@ def build_persistent_tile_queues(
                 down_index += 1
 
     device_queue_fields = (
-        workspace.persistent_gather_descriptor_indices, workspace.persistent_gather_tile_m,
-        workspace.persistent_gather_tile_n, workspace.persistent_down_descriptor_indices,
-        workspace.persistent_down_tile_m, workspace.persistent_down_tile_n,
-        workspace.persistent_gather_counter, workspace.persistent_down_counter,
+        workspace.persistent_gather_descriptor_indices,
+        workspace.persistent_gather_tile_m,
+        workspace.persistent_gather_tile_n,
+        workspace.persistent_down_descriptor_indices,
+        workspace.persistent_down_tile_m,
+        workspace.persistent_down_tile_n,
+        workspace.persistent_gather_counter,
+        workspace.persistent_down_counter,
     )
     assert all(field is not None for field in device_queue_fields)
     gather_device = device_queue_fields[:3]
@@ -116,10 +130,16 @@ def build_persistent_tile_queues(
     workspace.persistent_gather_counter.zero_()
     workspace.persistent_down_counter.zero_()
     return PersistentTileQueues(
-        gather_device[0][:gather_size], gather_device[1][:gather_size], gather_device[2][:gather_size],
-        workspace.persistent_gather_counter, gather_size,
-        down_device[0][:down_size], down_device[1][:down_size], down_device[2][:down_size],
-        workspace.persistent_down_counter, down_size,
+        gather_device[0][:gather_size],
+        gather_device[1][:gather_size],
+        gather_device[2][:gather_size],
+        workspace.persistent_gather_counter,
+        gather_size,
+        down_device[0][:down_size],
+        down_device[1][:down_size],
+        down_device[2][:down_size],
+        workspace.persistent_down_counter,
+        down_size,
     )
 
 
@@ -133,30 +153,62 @@ def execute_persistent_qwen(tensors: TensorList, queues: PersistentTileQueues) -
     """
 
     if not TRITON_AVAILABLE:
-        raise RuntimeError("persistent DWDP execution requested but triton is not installed")
+        raise RuntimeError(
+            "persistent DWDP execution requested but triton is not installed"
+        )
     if tensors.size == 0:
         return
     if not tensors.input_ptrs.is_cuda:
-        raise RuntimeError("persistent DWDP execution requires CUDA TensorList metadata")
+        raise RuntimeError(
+            "persistent DWDP execution requires CUDA TensorList metadata"
+        )
     programs = _persistent_program_count(tensors.input_ptrs.device)
     if queues.gather_size:
         _persistent_gather_swiglu[(programs,)](
-            queues.gather_descriptor_indices, queues.gather_tile_m, queues.gather_tile_n,
-            queues.gather_counter, queues.gather_size,
-            tensors.input_ptrs, tensors.token_index_ptrs, tensors.gate_weight_ptrs,
-            tensors.up_weight_ptrs, tensors.intermediate_ptrs, tensors.token_offsets,
-            tensors.m, tensors.k, tensors.intermediate_n, tensors.input_ld,
-            tensors.gate_ld, tensors.up_ld,
-            BLOCK_M=_BLOCK_M, BLOCK_N=_BLOCK_N, BLOCK_K=_BLOCK_K, num_warps=4,
+            queues.gather_descriptor_indices,
+            queues.gather_tile_m,
+            queues.gather_tile_n,
+            queues.gather_counter,
+            queues.gather_size,
+            tensors.input_ptrs,
+            tensors.token_index_ptrs,
+            tensors.gate_weight_ptrs,
+            tensors.up_weight_ptrs,
+            tensors.intermediate_ptrs,
+            tensors.token_offsets,
+            tensors.m,
+            tensors.k,
+            tensors.intermediate_n,
+            tensors.input_ld,
+            tensors.gate_ld,
+            tensors.up_ld,
+            BLOCK_M=_BLOCK_M,
+            BLOCK_N=_BLOCK_N,
+            BLOCK_K=_BLOCK_K,
+            num_warps=4,
         )
     if queues.down_size:
         _persistent_down_route_store[(programs,)](
-            queues.down_descriptor_indices, queues.down_tile_m, queues.down_tile_n,
-            queues.down_counter, queues.down_size,
-            tensors.intermediate_ptrs, tensors.down_weight_ptrs, tensors.output_ptrs,
-            tensors.weighted_output_ptrs, tensors.routing_weight_ptrs, tensors.token_offsets,
-            tensors.m, tensors.n, tensors.intermediate_n, tensors.down_ld, tensors.output_ld,
-            BLOCK_M=_BLOCK_M, BLOCK_N=_BLOCK_N, BLOCK_K=_BLOCK_K, num_warps=4,
+            queues.down_descriptor_indices,
+            queues.down_tile_m,
+            queues.down_tile_n,
+            queues.down_counter,
+            queues.down_size,
+            tensors.intermediate_ptrs,
+            tensors.down_weight_ptrs,
+            tensors.output_ptrs,
+            tensors.weighted_output_ptrs,
+            tensors.routing_weight_ptrs,
+            tensors.token_offsets,
+            tensors.m,
+            tensors.n,
+            tensors.intermediate_n,
+            tensors.down_ld,
+            tensors.output_ld,
+            BLOCK_M=_BLOCK_M,
+            BLOCK_N=_BLOCK_N,
+            BLOCK_K=_BLOCK_K,
+            num_warps=4,
         )
 
 
@@ -171,58 +223,165 @@ def _persistent_program_count(device: torch.device) -> int:
 
 
 if TRITON_AVAILABLE:
+
     @triton.jit
-    def _persistent_gather_swiglu(queue_descriptors, queue_tile_m, queue_tile_n, queue_counter, queue_size,
-                                  input_ptrs, token_ptrs, gate_ptrs, up_ptrs, intermediate_ptrs, token_offsets,
-                                  m_values, k_values, intermediate_n_values, input_lds, gate_lds, up_lds,
-                                  BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
+    def _persistent_gather_swiglu(
+        queue_descriptors,
+        queue_tile_m,
+        queue_tile_n,
+        queue_counter,
+        queue_size,
+        input_ptrs,
+        token_ptrs,
+        gate_ptrs,
+        up_ptrs,
+        intermediate_ptrs,
+        token_offsets,
+        m_values,
+        k_values,
+        intermediate_n_values,
+        input_lds,
+        gate_lds,
+        up_lds,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+    ):
         work = tl.atomic_add(queue_counter, 1)
         while work < queue_size:
             descriptor = tl.load(queue_descriptors + work)
             tile_m, tile_n = tl.load(queue_tile_m + work), tl.load(queue_tile_n + work)
-            m, k, n = tl.load(m_values + descriptor), tl.load(k_values + descriptor), tl.load(intermediate_n_values + descriptor)
+            m, k, n = (
+                tl.load(m_values + descriptor),
+                tl.load(k_values + descriptor),
+                tl.load(intermediate_n_values + descriptor),
+            )
             offset = tl.load(token_offsets + descriptor)
-            input_ptr, token_ptr = tl.load(input_ptrs + descriptor), tl.load(token_ptrs + descriptor)
-            gate_ptr, up_ptr, output_ptr = tl.load(gate_ptrs + descriptor), tl.load(up_ptrs + descriptor), tl.load(intermediate_ptrs + descriptor)
-            input_ld, gate_ld, up_ld = tl.load(input_lds + descriptor), tl.load(gate_lds + descriptor), tl.load(up_lds + descriptor)
-            rows, cols = tile_m * BLOCK_M + tl.arange(0, BLOCK_M), tile_n * BLOCK_N + tl.arange(0, BLOCK_N)
+            input_ptr, token_ptr = (
+                tl.load(input_ptrs + descriptor),
+                tl.load(token_ptrs + descriptor),
+            )
+            gate_ptr, up_ptr, output_ptr = (
+                tl.load(gate_ptrs + descriptor),
+                tl.load(up_ptrs + descriptor),
+                tl.load(intermediate_ptrs + descriptor),
+            )
+            input_ld, gate_ld, up_ld = (
+                tl.load(input_lds + descriptor),
+                tl.load(gate_lds + descriptor),
+                tl.load(up_lds + descriptor),
+            )
+            rows, cols = (
+                tile_m * BLOCK_M + tl.arange(0, BLOCK_M),
+                tile_n * BLOCK_N + tl.arange(0, BLOCK_N),
+            )
             tokens = tl.load(token_ptr + offset + rows, mask=rows < m, other=0)
-            gate_acc, up_acc, k_offset = tl.zeros((BLOCK_M, BLOCK_N), tl.float32), tl.zeros((BLOCK_M, BLOCK_N), tl.float32), 0
+            gate_acc, up_acc, k_offset = (
+                tl.zeros((BLOCK_M, BLOCK_N), tl.float32),
+                tl.zeros((BLOCK_M, BLOCK_N), tl.float32),
+                0,
+            )
             while k_offset < k:
                 ks = k_offset + tl.arange(0, BLOCK_K)
-                mask_a, mask_b = (rows[:, None] < m) & (ks[None, :] < k), (cols[None, :] < n) & (ks[:, None] < k)
-                values = tl.load(input_ptr + tokens[:, None] * input_ld + ks[None, :], mask=mask_a, other=0.0)
-                gate = tl.load(gate_ptr + cols[None, :] * gate_ld + ks[:, None], mask=mask_b, other=0.0)
-                up = tl.load(up_ptr + cols[None, :] * up_ld + ks[:, None], mask=mask_b, other=0.0)
+                mask_a, mask_b = (
+                    (rows[:, None] < m) & (ks[None, :] < k),
+                    (cols[None, :] < n) & (ks[:, None] < k),
+                )
+                values = tl.load(
+                    input_ptr + tokens[:, None] * input_ld + ks[None, :],
+                    mask=mask_a,
+                    other=0.0,
+                )
+                gate = tl.load(
+                    gate_ptr + cols[None, :] * gate_ld + ks[:, None],
+                    mask=mask_b,
+                    other=0.0,
+                )
+                up = tl.load(
+                    up_ptr + cols[None, :] * up_ld + ks[:, None], mask=mask_b, other=0.0
+                )
                 gate_acc += tl.dot(values, gate)
                 up_acc += tl.dot(values, up)
                 k_offset += BLOCK_K
-            tl.store(output_ptr + rows[:, None] * n + cols[None, :], gate_acc * tl.sigmoid(gate_acc) * up_acc, mask=(rows[:, None] < m) & (cols[None, :] < n))
+            tl.store(
+                output_ptr + rows[:, None] * n + cols[None, :],
+                gate_acc * tl.sigmoid(gate_acc) * up_acc,
+                mask=(rows[:, None] < m) & (cols[None, :] < n),
+            )
             work = tl.atomic_add(queue_counter, 1)
 
     @triton.jit
-    def _persistent_down_route_store(queue_descriptors, queue_tile_m, queue_tile_n, queue_counter, queue_size,
-                                     intermediate_ptrs, down_ptrs, output_ptrs, weighted_ptrs, routing_ptrs, token_offsets,
-                                     m_values, n_values, intermediate_n_values, down_lds, output_lds,
-                                     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr):
+    def _persistent_down_route_store(
+        queue_descriptors,
+        queue_tile_m,
+        queue_tile_n,
+        queue_counter,
+        queue_size,
+        intermediate_ptrs,
+        down_ptrs,
+        output_ptrs,
+        weighted_ptrs,
+        routing_ptrs,
+        token_offsets,
+        m_values,
+        n_values,
+        intermediate_n_values,
+        down_lds,
+        output_lds,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+    ):
         work = tl.atomic_add(queue_counter, 1)
         while work < queue_size:
             descriptor = tl.load(queue_descriptors + work)
             tile_m, tile_n = tl.load(queue_tile_m + work), tl.load(queue_tile_n + work)
-            m, n, k = tl.load(m_values + descriptor), tl.load(n_values + descriptor), tl.load(intermediate_n_values + descriptor)
-            offset, down_ld, output_ld = tl.load(token_offsets + descriptor), tl.load(down_lds + descriptor), tl.load(output_lds + descriptor)
-            input_ptr, down_ptr = tl.load(intermediate_ptrs + descriptor), tl.load(down_ptrs + descriptor)
-            output_ptr, weighted_ptr, routing_ptr = tl.load(output_ptrs + descriptor), tl.load(weighted_ptrs + descriptor), tl.load(routing_ptrs + descriptor)
-            rows, cols = tile_m * BLOCK_M + tl.arange(0, BLOCK_M), tile_n * BLOCK_N + tl.arange(0, BLOCK_N)
+            m, n, k = (
+                tl.load(m_values + descriptor),
+                tl.load(n_values + descriptor),
+                tl.load(intermediate_n_values + descriptor),
+            )
+            offset, down_ld, output_ld = (
+                tl.load(token_offsets + descriptor),
+                tl.load(down_lds + descriptor),
+                tl.load(output_lds + descriptor),
+            )
+            input_ptr, down_ptr = (
+                tl.load(intermediate_ptrs + descriptor),
+                tl.load(down_ptrs + descriptor),
+            )
+            output_ptr, weighted_ptr, routing_ptr = (
+                tl.load(output_ptrs + descriptor),
+                tl.load(weighted_ptrs + descriptor),
+                tl.load(routing_ptrs + descriptor),
+            )
+            rows, cols = (
+                tile_m * BLOCK_M + tl.arange(0, BLOCK_M),
+                tile_n * BLOCK_N + tl.arange(0, BLOCK_N),
+            )
             acc, k_offset = tl.zeros((BLOCK_M, BLOCK_N), tl.float32), 0
             while k_offset < k:
                 ks = k_offset + tl.arange(0, BLOCK_K)
-                values = tl.load(input_ptr + rows[:, None] * k + ks[None, :], mask=(rows[:, None] < m) & (ks[None, :] < k), other=0.0)
-                weights = tl.load(down_ptr + cols[None, :] * down_ld + ks[:, None], mask=(cols[None, :] < n) & (ks[:, None] < k), other=0.0)
+                values = tl.load(
+                    input_ptr + rows[:, None] * k + ks[None, :],
+                    mask=(rows[:, None] < m) & (ks[None, :] < k),
+                    other=0.0,
+                )
+                weights = tl.load(
+                    down_ptr + cols[None, :] * down_ld + ks[:, None],
+                    mask=(cols[None, :] < n) & (ks[:, None] < k),
+                    other=0.0,
+                )
                 acc += tl.dot(values, weights)
                 k_offset += BLOCK_K
             mask = (rows[:, None] < m) & (cols[None, :] < n)
             routing = tl.load(routing_ptr + offset + rows, mask=rows < m, other=0.0)
-            tl.store(output_ptr + rows[:, None] * output_ld + cols[None, :], acc, mask=mask)
-            tl.store(weighted_ptr + rows[:, None] * output_ld + cols[None, :], acc * routing[:, None], mask=mask)
+            tl.store(
+                output_ptr + rows[:, None] * output_ld + cols[None, :], acc, mask=mask
+            )
+            tl.store(
+                weighted_ptr + rows[:, None] * output_ld + cols[None, :],
+                acc * routing[:, None],
+                mask=mask,
+            )
             work = tl.atomic_add(queue_counter, 1)

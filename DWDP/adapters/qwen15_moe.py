@@ -200,7 +200,9 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
     """Automatic DWDP adapter for Qwen1.5/Qwen2-style Hugging Face MoE models."""
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs) -> "Qwen15MoEAdapter":
+    def from_pretrained(
+        cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs
+    ) -> "Qwen15MoEAdapter":
         """Load a supported Hugging Face Qwen MoE model and patch its MoE blocks."""
 
         base = super().from_pretrained(model_name_or_path, config=config, **kwargs)
@@ -215,8 +217,14 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
         config = getattr(model, "config", None)
         model_type = str(getattr(config, "model_type", "")).lower()
         class_name = type(model).__name__.lower()
-        architectures = " ".join(str(item).lower() for item in getattr(config, "architectures", ()) or ())
-        if "qwen" not in model_type and "qwen" not in class_name and "qwen" not in architectures:
+        architectures = " ".join(
+            str(item).lower() for item in getattr(config, "architectures", ()) or ()
+        )
+        if (
+            "qwen" not in model_type
+            and "qwen" not in class_name
+            and "qwen" not in architectures
+        ):
             return False
         return bool(discover_qwen_moe_layers(model))
 
@@ -260,4 +268,6 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
 
 
 register_adapter("qwen15_moe", Qwen15MoEAdapter)
-register_model_adapter(("qwen2_moe", "qwen1.5-moe", "qwenmoe", "qwen2moe"), Qwen15MoEAdapter)
+register_model_adapter(
+    ("qwen2_moe", "qwen1.5-moe", "qwenmoe", "qwen2moe"), Qwen15MoEAdapter
+)

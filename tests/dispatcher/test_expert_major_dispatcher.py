@@ -51,7 +51,9 @@ def test_dispatch_groups_tokens_by_expert_in_stable_order() -> None:
     plan = dispatcher(router_output)
 
     assert torch.equal(plan.assignments.expert_ids, torch.tensor([1, 2, 4, 4]))
-    assert torch.equal(plan.assignments.packed_token_indices, torch.tensor([1, 3, 0, 2]))
+    assert torch.equal(
+        plan.assignments.packed_token_indices, torch.tensor([1, 3, 0, 2])
+    )
     assert torch.allclose(
         plan.assignments.packed_routing_weights,
         torch.tensor([0.6, 0.9, 0.8, 0.7]),
@@ -156,10 +158,14 @@ def test_inverse_permutation_round_trips() -> None:
     positions = torch.arange(num_assignments, dtype=torch.int64)
 
     assert torch.equal(
-        plan.metadata.inverse_permutation.index_select(0, plan.metadata.token_permutation),
+        plan.metadata.inverse_permutation.index_select(
+            0, plan.metadata.token_permutation
+        ),
         positions,
     )
-    assert torch.equal(plan.metadata.destination_positions, plan.metadata.inverse_permutation)
+    assert torch.equal(
+        plan.metadata.destination_positions, plan.metadata.inverse_permutation
+    )
 
 
 def test_workspace_buffers_are_reused() -> None:
@@ -211,7 +217,9 @@ def test_invalid_config_rejected() -> None:
     with pytest.raises(ValueError):
         DispatcherConfig(num_experts=4, algorithm="invalid")
     with pytest.raises(ValueError):
-        DispatcherConfig(num_experts=4, algorithm="counting_scatter", stable_order=False)
+        DispatcherConfig(
+            num_experts=4, algorithm="counting_scatter", stable_order=False
+        )
 
 
 def test_out_of_range_expert_indices_rejected() -> None:

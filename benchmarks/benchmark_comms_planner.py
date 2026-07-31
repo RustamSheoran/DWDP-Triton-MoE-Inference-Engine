@@ -34,12 +34,18 @@ def make_execution_plan(*, active_experts: int, device: str) -> ExecutionPlan:
         expert_queue=expert_queue,
         expert_starts=starts,
         expert_ends=ends,
-        expert_counts=torch.full((active_experts,), 8, dtype=torch.int64, device=device),
+        expert_counts=torch.full(
+            (active_experts,), 8, dtype=torch.int64, device=device
+        ),
         execution_priority=order,
-        stream_assignments=torch.zeros(active_experts, dtype=torch.int64, device=device),
+        stream_assignments=torch.zeros(
+            active_experts, dtype=torch.int64, device=device
+        ),
         batches=(),
         synchronization=SchedulerSynchronizationMetadata(
-            barrier_after_batch=torch.zeros(active_experts, dtype=torch.bool, device=device),
+            barrier_after_batch=torch.zeros(
+                active_experts, dtype=torch.bool, device=device
+            ),
         ),
         dependencies=SchedulerDependencyMetadata(
             dependency_src=torch.empty(0, dtype=torch.int64, device=device),

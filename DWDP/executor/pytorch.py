@@ -59,19 +59,32 @@ class PyTorchExecutor(BaseExecutor):
         expert_records: list[ExpertOutput] = []
         skipped_experts = 0
 
-        schedule_rows = self._get_schedule_rows(execution_plan, workspace=active_workspace)
-        for schedule_idx, (expert_id, start, end, count, priority, stream_id) in enumerate(schedule_rows):
-
+        schedule_rows = self._get_schedule_rows(
+            execution_plan, workspace=active_workspace
+        )
+        for schedule_idx, (
+            expert_id,
+            start,
+            end,
+            count,
+            priority,
+            stream_id,
+        ) in enumerate(schedule_rows):
             if count == 0:
                 skipped_experts += 1
                 continue
-            if self.config.max_tokens_per_expert is not None and count > self.config.max_tokens_per_expert:
+            if (
+                self.config.max_tokens_per_expert is not None
+                and count > self.config.max_tokens_per_expert
+            ):
                 raise ValueError(
                     f"Expert {expert_id} received {count} tokens, exceeding max_tokens_per_expert"
                 )
 
             token_indices = dispatch_plan.assignments.packed_token_indices[start:end]
-            routing_weights = dispatch_plan.assignments.packed_routing_weights[start:end]
+            routing_weights = dispatch_plan.assignments.packed_routing_weights[
+                start:end
+            ]
             gathered = self._gather_inputs(
                 flat_hidden_states,
                 token_indices,
@@ -163,7 +176,9 @@ class PyTorchExecutor(BaseExecutor):
         )
         workspace_metadata = WorkspaceMetadata(
             used_workspace=active_workspace is not None,
-            workspace_bytes=active_workspace.estimated_bytes() if active_workspace is not None else 0,
+            workspace_bytes=active_workspace.estimated_bytes()
+            if active_workspace is not None
+            else 0,
         )
 
         return ExecutorOutput(
@@ -196,16 +211,20 @@ class PyTorchExecutor(BaseExecutor):
                 execution_plan.execution_priority,
                 execution_plan.stream_assignments,
             )
-        values = torch.stack(
-            (
-                execution_plan.expert_queue,
-                execution_plan.expert_starts,
-                execution_plan.expert_ends,
-                execution_plan.expert_counts,
-                execution_plan.execution_priority,
-                execution_plan.stream_assignments,
+        values = (
+            torch.stack(
+                (
+                    execution_plan.expert_queue,
+                    execution_plan.expert_starts,
+                    execution_plan.expert_ends,
+                    execution_plan.expert_counts,
+                    execution_plan.execution_priority,
+                    execution_plan.stream_assignments,
+                )
             )
-        ).cpu().tolist()
+            .cpu()
+            .tolist()
+        )
         return tuple(zip(*values))
 
     def _allocate_outputs(

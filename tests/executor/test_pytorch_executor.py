@@ -16,7 +16,12 @@ from DWDP.comms_planner import (  # noqa: E402
     TopologyMetadata,
 )
 from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
-from DWDP.executor import ExecutorConfig, ExecutorWorkspace, PyTorchExecutor, build_executor  # noqa: E402
+from DWDP.executor import (
+    ExecutorConfig,
+    ExecutorWorkspace,
+    PyTorchExecutor,
+    build_executor,
+)  # noqa: E402
 from DWDP.executor.experts import ExpertRegistry  # noqa: E402
 from DWDP.scheduler import (  # noqa: E402
     DependencyMetadata as SchedulerDependencyMetadata,
@@ -102,7 +107,13 @@ def make_communication_plan() -> CommunicationPlan:
     return CommunicationPlan(
         local_expert_ids=torch.tensor([0, 1], dtype=torch.int64),
         remote_expert_ids=empty_i64,
-        graph=CommunicationGraph(nodes=(), edges=(), node_ids=empty_i64, edge_src=empty_i64, edge_dst=empty_i64),
+        graph=CommunicationGraph(
+            nodes=(),
+            edges=(),
+            node_ids=empty_i64,
+            edge_src=empty_i64,
+            edge_dst=empty_i64,
+        ),
         communication_descriptors=(),
         transfer_descriptors=(),
         communication_groups=(),
@@ -287,7 +298,9 @@ def test_remote_experts_are_rejected_by_reference_backend() -> None:
     comms.remote_expert_ids = torch.tensor([1], dtype=torch.int64)
 
     with pytest.raises(NotImplementedError):
-        make_executor()(torch.randn(4, 2), make_dispatch_plan(), make_execution_plan(), comms)
+        make_executor()(
+            torch.randn(4, 2), make_dispatch_plan(), make_execution_plan(), comms
+        )
 
 
 def test_missing_expert_is_rejected() -> None:

@@ -98,7 +98,9 @@ def test_router_logits_match_manual_linear() -> None:
     hidden_states = torch.randn(2, 3, 6)
 
     output = router(hidden_states)
-    manual = torch.nn.functional.linear(hidden_states.reshape(-1, 6), router.weight, router.bias)
+    manual = torch.nn.functional.linear(
+        hidden_states.reshape(-1, 6), router.weight, router.bias
+    )
     manual = manual.reshape(2, 3, 4)
 
     assert torch.allclose(output.router_logits, manual)

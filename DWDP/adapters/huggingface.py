@@ -22,13 +22,17 @@ class HuggingFaceAdapter(BaseModelAdapter):
     """
 
     @classmethod
-    def from_pretrained(cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs) -> "HuggingFaceAdapter":
+    def from_pretrained(
+        cls, model_name_or_path: str, *, config: RuntimeConfig | None = None, **kwargs
+    ) -> "HuggingFaceAdapter":
         """Load a Hugging Face causal LM and optional tokenizer."""
 
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as exc:
-            raise ImportError("HuggingFaceAdapter.from_pretrained requires transformers") from exc
+            raise ImportError(
+                "HuggingFaceAdapter.from_pretrained requires transformers"
+            ) from exc
 
         runtime_config = config or RuntimeConfig()
         model_kwargs = dict(kwargs)
@@ -39,7 +43,9 @@ class HuggingFaceAdapter(BaseModelAdapter):
             tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         adapter_cls = detect_adapter_class(model)
         if adapter_cls is not None and adapter_cls is not cls:
-            adapter = adapter_cls(model=model, tokenizer=tokenizer, config=runtime_config)
+            adapter = adapter_cls(
+                model=model, tokenizer=tokenizer, config=runtime_config
+            )
             adapter.patch_model()
             return adapter
         return cls(model=model, tokenizer=tokenizer, config=runtime_config)
@@ -55,9 +61,13 @@ class HuggingFaceAdapter(BaseModelAdapter):
 
         from DWDP.runtime.runtime import DWDPRuntime
 
-        adapter_cls = detect_adapter_class(self.model) if self.model is not None else None
+        adapter_cls = (
+            detect_adapter_class(self.model) if self.model is not None else None
+        )
         if adapter_cls is not None and adapter_cls is not type(self):
-            adapter = adapter_cls(model=self.model, tokenizer=self.tokenizer, config=self.config)
+            adapter = adapter_cls(
+                model=self.model, tokenizer=self.tokenizer, config=self.config
+            )
             adapter.patch_model()
             return adapter.create_runtime()
 
@@ -131,7 +141,9 @@ class _DelegatingRuntime(nn.Module):
     def benchmark(self, *args, **kwargs):
         """Benchmarking for a delegating wrapper is handled by CLI harnesses."""
 
-        raise RuntimeError("DWDP module benchmark requires an explicitly bound MoE layer")
+        raise RuntimeError(
+            "DWDP module benchmark requires an explicitly bound MoE layer"
+        )
 
     def restore_model(self) -> int:
         """Restore patched layers when supported by the active adapter."""

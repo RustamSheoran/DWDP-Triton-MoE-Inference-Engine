@@ -96,7 +96,9 @@ def test_adapter_registry_builds_huggingface_adapter() -> None:
 
 
 def test_correctness_tensor_comparison() -> None:
-    report = compare_tensors(torch.tensor([1.0, 2.0]), torch.tensor([1.0, 2.001]), atol=1e-2)
+    report = compare_tensors(
+        torch.tensor([1.0, 2.0]), torch.tensor([1.0, 2.001]), atol=1e-2
+    )
 
     assert report.allclose
     assert report.max_abs_error > 0.0
