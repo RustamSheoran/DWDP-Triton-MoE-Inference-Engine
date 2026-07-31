@@ -441,7 +441,12 @@ def release(model: Any) -> None:
     del model
     gc.collect()
     if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+        for i in range(torch.cuda.device_count()):
+            with torch.cuda.device(i):
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        torch.cuda.synchronize()
+    gc.collect()
 
 
 def main() -> None:
