@@ -376,17 +376,28 @@ def benchmark(
     generation_kwargs = {"max_new_tokens": args.max_new_tokens, "do_sample": False}
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
-    prefill_latency_ms = measure_prefill(model, inputs, args)
-    ttft_ms = measure_ttft(model, inputs, args)
 
+    print("   [1/3] Measuring prompt prefill latency...", flush=True)
+    prefill_latency_ms = measure_prefill(model, inputs, args)
+    print(f"         --> Prefill Latency: {prefill_latency_ms:.2f} ms", flush=True)
+
+    print("   [2/3] Measuring Time To First Token (TTFT)...", flush=True)
+    ttft_ms = measure_ttft(model, inputs, args)
+    print(f"         --> TTFT: {ttft_ms:.2f} ms", flush=True)
+
+    print(
+        f"   [3/3] Running generation benchmark ({args.warmup} warmup + {args.iters} measurement iterations)...",
+        flush=True,
+    )
     with torch.inference_mode():
         for _ in range(args.warmup):
             model.generate(**inputs, **generation_kwargs)
         synchronize()
         start = time.perf_counter()
         output_ids = None
-        for _ in range(args.iters):
+        for i in range(args.iters):
             output_ids = model.generate(**inputs, **generation_kwargs)
+            print(f"         --> Iteration {i+1}/{args.iters} complete", flush=True)
         synchronize()
 
     latency = (time.perf_counter() - start) / args.iters
@@ -423,37 +434,39 @@ def main() -> None:
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    print(f"model={args.model}")
-    print(f"quantization={args.quantization}")
-    print(f"gpu={torch.cuda.get_device_name(0)}")
+    print(f"model={args.model}", flush=True)
+    print(f"quantization={args.quantization}", flush=True)
+    print(f"gpu={torch.cuda.get_device_name(0)}", flush=True)
     token = resolve_hf_token(args.hf_token)
-    print(f"prompt={args.prompt!r}")
-    print(f"hf_token={'provided' if token else 'not provided'}")
+    print(f"prompt={args.prompt!r}", flush=True)
+    print(f"hf_token={'provided' if token else 'not provided'}", flush=True)
 
+    print("\n[STEP 1/4] Loading Tokenizer...", flush=True)
     tokenizer_kwargs = {"token": token} if token else {}
     tokenizer = AutoTokenizer.from_pretrained(args.model, **tokenizer_kwargs)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    print("\nLoading native Hugging Face model...")
+    print("\n[STEP 2/4] Loading native Hugging Face model & downloading weights...", flush=True)
     hf_load_start = time.perf_counter()
     hf_model = AutoModelForCausalLM.from_pretrained(
         args.model, **load_kwargs(args.quantization, token)
     )
     hf_load_time_ms = (time.perf_counter() - hf_load_start) * 1e3
     hf_model.eval()
+    print(f"--> Hugging Face model loaded successfully in {hf_load_time_ms / 1000.0:.2f}s!", flush=True)
+    
+    print("\n[STEP 3/4] Running Hugging Face baseline benchmark...", flush=True)
     hf_metrics, hf_text, hf_token_ids = benchmark(hf_model, tokenizer, args)
     hf_profile = profile_generation(hf_model, tokenizer, args) if args.profile else {}
-    print(f"hf_latency_ms={hf_metrics['latency_ms']:.2f}")
-    print(f"hf_tokens_per_second={hf_metrics['tokens_per_second']:.2f}")
-    print(f"hf_output={hf_text!r}")
+    print(f"hf_latency_ms={hf_metrics['latency_ms']:.2f}", flush=True)
+    print(f"hf_tokens_per_second={hf_metrics['tokens_per_second']:.2f}", flush=True)
+    print(f"hf_output={hf_text!r}", flush=True)
     release(hf_model)
-    # release() clears CUDA's allocator, but the caller must also drop its
-    # reference or Python will keep the model (and its VRAM allocations) alive.
     hf_model = None
 
-    print("\nLoading DWDP-patched model...")
+    print("\n[STEP 4/4] Loading & Benchmarking DWDP-patched model...", flush=True)
     dwdp_load_start = time.perf_counter()
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
@@ -462,13 +475,14 @@ def main() -> None:
     )
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
+    print(f"--> DWDP model loaded successfully in {dwdp_load_time_ms / 1000.0:.2f}s!", flush=True)
     dwdp_metrics, dwdp_text, dwdp_token_ids = benchmark(dwdp_runtime, tokenizer, args)
     dwdp_profile = (
         profile_generation(dwdp_runtime, tokenizer, args) if args.profile else {}
     )
-    print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}")
-    print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}")
-    print(f"dwdp_output={dwdp_text!r}")
+    print(f"dwdp_latency_ms={dwdp_metrics['latency_ms']:.2f}", flush=True)
+    print(f"dwdp_tokens_per_second={dwdp_metrics['tokens_per_second']:.2f}", flush=True)
+    print(f"dwdp_output={dwdp_text!r}", flush=True)
 
     results = {
         "model": args.model,
