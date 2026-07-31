@@ -50,7 +50,18 @@ class DWDPRuntime(nn.Module):
         self.adapter = adapter
         self.context = RuntimeContext.from_config(self.config)
         self.graph_runner = CUDAGraphRunner(self)
-        self.paged_kv_manager = PagedKVCacheManager(num_blocks=1024) if torch.cuda.is_available() else None
+        self.paged_kv_manager = (
+            PagedKVCacheManager(num_blocks=1024) if torch.cuda.is_available() else None
+        )
+
+        # Enable FlashAttention SDPA & TF32 Tensor Cores
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+                torch.backends.cuda.enable_flash_sdp(True)
+                torch.backends.cuda.enable_mem_efficient_sdp(True)
+                torch.backends.cuda.enable_math_sdp(True)
 
     @classmethod
     def build_reference(
