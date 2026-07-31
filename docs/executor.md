@@ -215,8 +215,8 @@ duplicate model weights. Provider construction retains references to those
 original tensors, exposes dtype/device/format metadata for FP16, BF16, FP8,
 and INT4 backends, and makes materialization explicit.
 
-`TritonExpertExecutor` is the registered `triton` backend boundary. On CUDA it
-builds a single non-owning `TensorList` from finalized plans and reusable
+`TritonExpertExecutor` in [triton.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/triton.py) is the registered `triton` backend boundary. On CUDA it
+builds a single non-owning `TensorList` in [tensor_list.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/tensor_list.py) from finalized plans and reusable
 executor workspace buffers. TensorList uses contiguous Structure-of-Arrays
 metadata (pointers, ids, ranges, dimensions, leading dimensions, dtype and
 workspace fields), which grouped kernels load field-wise without per-expert
@@ -229,7 +229,7 @@ fallback without changing `ExecutorConfig`, plans, or `ExecutorOutput`.
 
 ## DWDP Persistent Pointer-Array Kernel
 
-`executor/kernels/persistent.py` is a DWDP-specific persistent Triton engine,
+[kernels/persistent.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/persistent.py) is a DWDP-specific persistent Triton engine,
 not a dense grouped-GEMM adapter. Host construction converts TensorList into
 reusable device-resident tile queues without sorting or packing weights. One
 program per SM repeatedly atomically claims a tile, reads independent Qwen
@@ -242,13 +242,12 @@ so stream order provides stage dependency without host synchronization.
 
 The persistent executor prefers native FP8 on capable CUDA hardware (Compute Capability 8.9+). It selects E4M3 (`float8_e4m3fn`) when exposed by the PyTorch/Triton stack, with E5M2 as fallback. `backend="triton_fp8"` enforces mandatory native FP8 execution.
 
-Key FP8 architectural features:
-- **In-Place Weight Quantization**: `convert_qwen_weights_to_fp8_once()` converts parameter storage in place while computing per-expert fine-grained scaling maps (`scale_map`), keeping `TensorList` pointer-array layouts unchanged.
-- **Single-Pass Workspace Quantization**: `quantize_activations_once()` quantizes inputs into workspace-allocated FP8 buffers once per forward pass while computing per-token/per-tensor scale factors (`scale_out`).
-- **Micro-Scale Dequantization in Triton Kernels**: Dedicated FP8 kernels (`_persistent_fp8_gather_swiglu` and `_persistent_fp8_down_route_store`) load scaling pointers from `quantization_ptrs`, accumulate dot products in FP32, and apply fine-grained scale factor dequantization before activation functions and output stores.
+Key FP8 implementation files & features:
+- **Storage Conversion**: [`convert_qwen_weights_to_fp8_once()`](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/fp8.py#L17) in [fp8.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/fp8.py) converts parameter storage in place while computing per-expert fine-grained scaling maps (`scale_map`), keeping `TensorList` pointer-array layouts unchanged.
+- **Single-Pass Workspace Quantization**: [`quantize_activations_once()`](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/fp8.py#L54) in [fp8.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/fp8.py) quantizes inputs into workspace-allocated FP8 buffers once per forward pass while computing per-token/per-tensor scale factors (`scale_out`).
+- **Micro-Scale Dequantization in Triton Kernels**: Dedicated FP8 kernels [`_persistent_fp8_gather_swiglu`](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/fp8.py#L126) and [`_persistent_fp8_down_route_store`](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/fp8.py#L218) in [kernels/fp8.py](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/fp8.py) load scaling pointers from `quantization_ptrs`, accumulate dot products in FP32, and apply fine-grained scale factor dequantization before activation functions and output stores.
+- **Benchmarking & Profiling**: See [BENCHMARK_GUIDE.md](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/docs/BENCHMARK_GUIDE.md) and [run_all_benchmarks.sh](file:///home/rustam/DWDP-Triton-MoE-Inference-Engine/scripts/run_all_benchmarks.sh).
 
-
-without changing Executor API.
 
 ## Distributed Execution
 
