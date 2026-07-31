@@ -453,7 +453,15 @@ def main() -> None:
     torch.cuda.manual_seed_all(args.seed)
 
     print(f"model={args.model}", flush=True)
-    print(f"quantization={args.quantization}", flush=True)
+    active_quant, quant_reasoning = check_vram_and_select_precision(
+        args.quantization,
+        args.batch_size,
+        args.sequence_length or 128,
+        args.max_new_tokens,
+    )
+    print(f"requested_quantization={args.quantization}", flush=True)
+    print(f"active_quantization={active_quant}", flush=True)
+    print(f"quantization_reasoning={quant_reasoning}", flush=True)
     print(f"gpu={torch.cuda.get_device_name(0)}", flush=True)
     token = resolve_hf_token(args.hf_token)
     print(f"prompt={args.prompt!r}", flush=True)
@@ -466,10 +474,10 @@ def main() -> None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
 
-    print("\n[STEP 2/4] Loading native Hugging Face model & downloading weights...", flush=True)
+    print(f"\n[STEP 2/4] Loading native Hugging Face model & downloading weights ({active_quant})...", flush=True)
     hf_load_start = time.perf_counter()
     hf_model = AutoModelForCausalLM.from_pretrained(
-        args.model, **load_kwargs(args.quantization, token)
+        args.model, **load_kwargs(active_quant, token)
     )
     hf_load_time_ms = (time.perf_counter() - hf_load_start) * 1e3
     hf_model.eval()
@@ -484,12 +492,12 @@ def main() -> None:
     release(hf_model)
     hf_model = None
 
-    print("\n[STEP 4/4] Loading & Benchmarking DWDP-patched model...", flush=True)
+    print(f"\n[STEP 4/4] Loading & Benchmarking DWDP-patched model ({active_quant})...", flush=True)
     dwdp_load_start = time.perf_counter()
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
         config=RuntimeConfig(backend="dwdp", device="cuda", dtype=torch.float16),
-        **load_kwargs(args.quantization, token),
+        **load_kwargs(active_quant, token),
     )
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
