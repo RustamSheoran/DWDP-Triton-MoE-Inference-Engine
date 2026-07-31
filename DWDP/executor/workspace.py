@@ -71,7 +71,8 @@ class ExecutorWorkspace:
             or tensor.dtype != dtype
             or tensor.device != device
         ):
-            tensor = torch.empty(rows, cols, dtype=dtype, device=device)
+            pin = device.type == "cpu" and torch.cuda.is_available()
+            tensor = torch.empty(rows, cols, dtype=dtype, device=device, pin_memory=pin)
             setattr(self, name, tensor)
         return tensor[:rows, :cols]
 
