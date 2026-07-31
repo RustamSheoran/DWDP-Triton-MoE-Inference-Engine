@@ -495,9 +495,10 @@ def main() -> None:
 
     print(f"\n[STEP 4/4] Loading & Benchmarking DWDP-patched model ({active_quant})...", flush=True)
     dwdp_load_start = time.perf_counter()
+    dwdp_backend = "triton" if torch.cuda.is_available() else "dwdp"
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
-        config=RuntimeConfig(backend="dwdp", device="cuda", dtype=torch.float16),
+        config=RuntimeConfig(backend=dwdp_backend, device="cuda", dtype=torch.float16),
         **load_kwargs(active_quant, token),
     )
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
