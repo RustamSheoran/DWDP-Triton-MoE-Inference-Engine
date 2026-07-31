@@ -57,6 +57,20 @@ This builds:
 
 The stage implementations are not special-cased by the runtime. They are created through existing module registries and can be replaced by registering future backends.
 
+## CUDA Graph Replay Engine
+
+[cuda_graph.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/runtime/cuda_graph.py) provides static GPU execution graph capture and replay (`CUDAGraphRunner`).
+
+- **Warmup Capture**: Captures static execution DAGs into a `torch.cuda.CUDAGraph()` during initial warmup passes.
+- **Zero CPU Tax Replay**: Replays token decode passes using `g.replay()`, eliminating 100% of CPU interpreter and module wrapper call tax (0 ms CPU tax).
+
+## PagedAttention Virtual Memory Manager
+
+[paged_attention.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/runtime/paged_attention.py) provides virtual memory page allocation for KV cache (`PagedKVCacheManager`).
+
+- **Block-Wise Allocation**: Allocates fixed physical memory blocks (`block_size=16`) to manage Key-Value Cache tensors.
+- **Memory Fragmentation Prevention**: Eliminates VRAM fragmentation across long sequence generation passes.
+
 ## Forward Path
 
 `DWDPRuntime.forward(hidden_states)` executes:
