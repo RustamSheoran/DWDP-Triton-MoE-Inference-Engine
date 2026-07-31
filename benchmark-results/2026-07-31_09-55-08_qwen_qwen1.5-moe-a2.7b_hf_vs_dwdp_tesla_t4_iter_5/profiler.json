@@ -1,0 +1,514 @@
+{
+  "dwdp": {
+    "comms_planner": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "copies": {
+      "cpu_ms": 161.94731300005424,
+      "device_ms": 35.40331699996993,
+      "operators": [
+        "aten::_to_copy",
+        "aten::copy_",
+        "aten::to",
+        "aten::topk"
+      ]
+    },
+    "dispatcher": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "executor": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "gather": {
+      "cpu_ms": 38.452211999996564,
+      "device_ms": 23.447264999997994,
+      "operators": [
+        "aten::index",
+        "aten::index_select"
+      ]
+    },
+    "gemms": {
+      "cpu_ms": 34.88981499999791,
+      "device_ms": 112.45213799999682,
+      "operators": [
+        "aten::addmm",
+        "aten::bmm",
+        "aten::matmul",
+        "aten::mm"
+      ]
+    },
+    "merger": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "python_orchestration": {
+      "cpu_ms": 1814.8178180000511,
+      "device_ms": 8352.117768999999,
+      "operators": [
+        "dwdp.python_orchestration"
+      ]
+    },
+    "router": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "scheduler": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "synchronization": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "top_operators": [
+      {
+        "calls": 1,
+        "operator": "dwdp.python_orchestration",
+        "self_cpu_ms": 1814.8178180000511,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 10980,
+        "operator": "bitsandbytes::gemm_4bit",
+        "self_cpu_ms": 597.7027989998944,
+        "self_device_ms": 589.3861760000142
+      },
+      {
+        "calls": 51184,
+        "operator": "cudaLaunchKernel",
+        "self_cpu_ms": 479.89218800001174,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 18081,
+        "operator": "aten::empty",
+        "self_cpu_ms": 153.06451099999953,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 8514,
+        "operator": "cudaMemcpyAsync",
+        "self_cpu_ms": 131.9923190000157,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 8968,
+        "operator": "aten::mul",
+        "self_cpu_ms": 122.10094400000386,
+        "self_device_ms": 62.22225999999368
+      },
+      {
+        "calls": 9400,
+        "operator": "aten::copy_",
+        "self_cpu_ms": 90.80030999998408,
+        "self_device_ms": 27.447854999972872
+      },
+      {
+        "calls": 18093,
+        "operator": "aten::view",
+        "self_cpu_ms": 62.65398899994804,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2892,
+        "operator": "aten::silu",
+        "self_cpu_ms": 51.28217800000162,
+        "self_device_ms": 14.065677999991898
+      },
+      {
+        "calls": 3961,
+        "operator": "aten::add",
+        "self_cpu_ms": 50.57372400001067,
+        "self_device_ms": 14.596878999978358
+      },
+      {
+        "calls": 3125,
+        "operator": "cudaStreamSynchronize",
+        "self_cpu_ms": 50.059708000007255,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 58343,
+        "operator": "aten::to",
+        "self_cpu_ms": 45.03957600005421,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 25427,
+        "operator": "aten::slice",
+        "self_cpu_ms": 41.27618299996103,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 4060,
+        "operator": "aten::index_select",
+        "self_cpu_ms": 38.130260999996445,
+        "self_device_ms": 23.350317999999465
+      },
+      {
+        "calls": 5740,
+        "operator": "aten::empty_strided",
+        "self_cpu_ms": 37.24815000000044,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2736,
+        "operator": "aten::cat",
+        "self_cpu_ms": 35.782040999993946,
+        "self_device_ms": 17.26689299998327
+      },
+      {
+        "calls": 40078,
+        "operator": "aten::as_strided",
+        "self_cpu_ms": 30.531967000078325,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 769,
+        "operator": "aten::mm",
+        "self_cpu_ms": 28.461629999998795,
+        "self_device_ms": 105.33872799999658
+      },
+      {
+        "calls": 4899,
+        "operator": "aten::_to_copy",
+        "self_cpu_ms": 19.899969000012458,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 7,
+        "operator": "Activity Buffer Request",
+        "self_cpu_ms": 16.46381099999976,
+        "self_device_ms": 0.05006699999957345
+      },
+      {
+        "calls": 1536,
+        "operator": "aten::scatter_",
+        "self_cpu_ms": 16.149961999998787,
+        "self_device_ms": 7.518222999999214
+      },
+      {
+        "calls": 384,
+        "operator": "aten::nonzero",
+        "self_cpu_ms": 15.448576000006154,
+        "self_device_ms": 4.857360999990642
+      },
+      {
+        "calls": 784,
+        "operator": "aten::pow",
+        "self_cpu_ms": 12.863175000008582,
+        "self_device_ms": 2.5467710000009585
+      },
+      {
+        "calls": 784,
+        "operator": "aten::mean",
+        "self_cpu_ms": 12.698988999992066,
+        "self_device_ms": 7.208753999992047
+      },
+      {
+        "calls": 401,
+        "operator": "aten::cumsum",
+        "self_cpu_ms": 10.9620649999931,
+        "self_device_ms": 2.9184790000067187
+      },
+      {
+        "calls": 768,
+        "operator": "aten::min",
+        "self_cpu_ms": 10.791596999994193,
+        "self_device_ms": 6.574953999999561
+      },
+      {
+        "calls": 1952,
+        "operator": "aten::arange",
+        "self_cpu_ms": 10.787047999989424,
+        "self_device_ms": 2.8983429999997887
+      },
+      {
+        "calls": 784,
+        "operator": "aten::max",
+        "self_cpu_ms": 10.280789999983302,
+        "self_device_ms": 6.659681000000548
+      },
+      {
+        "calls": 768,
+        "operator": "aten::neg",
+        "self_cpu_ms": 8.66292300000514,
+        "self_device_ms": 4.337186999996561
+      },
+      {
+        "calls": 384,
+        "operator": "aten::sum",
+        "self_cpu_ms": 8.379184999990073,
+        "self_device_ms": 5.642466999995362
+      }
+    ]
+  },
+  "dwdp_load_time_ms": 177485.50071299996,
+  "dwdp_output": "The Mixture of Experts (MoE) architecture is a type of neural network architecture that is used for decision-making tasks. It is a type of ensemble learning, where multiple models are combined to make a final decision. In the MoE architecture, each expert model is trained to make a specific decision, and the final decision is made by combining the outputs of all the expert models. The MoE architecture is often used in applications where the decision-making process is complex and requires multiple levels of expertise to make a final decision. The MoE architecture is also used in applications where the decision-making process is dynamic and requires the ability to adapt to",
+  "hf": {
+    "comms_planner": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "copies": {
+      "cpu_ms": 121.18300100001743,
+      "device_ms": 31.210743999998048,
+      "operators": [
+        "aten::_to_copy",
+        "aten::copy_",
+        "aten::to",
+        "aten::topk"
+      ]
+    },
+    "dispatcher": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "executor": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "gather": {
+      "cpu_ms": 195.22956700005636,
+      "device_ms": 79.42950299999741,
+      "operators": [
+        "aten::index",
+        "aten::index_add_",
+        "aten::index_select"
+      ]
+    },
+    "gemms": {
+      "cpu_ms": 35.33368300000465,
+      "device_ms": 112.24408200000367,
+      "operators": [
+        "aten::addmm",
+        "aten::bmm",
+        "aten::matmul",
+        "aten::mm"
+      ]
+    },
+    "merger": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "python_orchestration": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "router": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "scheduler": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "synchronization": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "top_operators": [
+      {
+        "calls": 10989,
+        "operator": "bitsandbytes::gemm_4bit",
+        "self_cpu_ms": 623.4686719999996,
+        "self_device_ms": 587.8345320000018
+      },
+      {
+        "calls": 61783,
+        "operator": "cudaLaunchKernel",
+        "self_cpu_ms": 556.0506679999671,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 7548,
+        "operator": "aten::index",
+        "self_cpu_ms": 160.48625000005006,
+        "self_device_ms": 58.45869500000406
+      },
+      {
+        "calls": 14937,
+        "operator": "aten::empty",
+        "self_cpu_ms": 154.2591489999785,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 8974,
+        "operator": "aten::mul",
+        "self_cpu_ms": 127.39256400000595,
+        "self_device_ms": 43.88580600000066
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::nonzero",
+        "self_cpu_ms": 122.0402450000318,
+        "self_device_ms": 57.97576700001002
+      },
+      {
+        "calls": 5459,
+        "operator": "cudaStreamSynchronize",
+        "self_cpu_ms": 77.75729900000061,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 6948,
+        "operator": "cudaMemcpyAsync",
+        "self_cpu_ms": 77.32785399999658,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 26145,
+        "operator": "aten::view",
+        "self_cpu_ms": 70.58502599997087,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 4651,
+        "operator": "aten::copy_",
+        "self_cpu_ms": 56.191466000032975,
+        "self_device_ms": 18.399590999996516
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::silu",
+        "self_cpu_ms": 53.04752900000293,
+        "self_device_ms": 14.087401999997411
+      },
+      {
+        "calls": 3574,
+        "operator": "aten::add",
+        "self_cpu_ms": 47.47493099999275,
+        "self_device_ms": 13.366419000009053
+      },
+      {
+        "calls": 58592,
+        "operator": "aten::to",
+        "self_cpu_ms": 43.00110500000103,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 3961,
+        "operator": "aten::empty_strided",
+        "self_cpu_ms": 35.06663900000727,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2511,
+        "operator": "aten::index_add_",
+        "self_cpu_ms": 34.40157000000616,
+        "self_device_ms": 20.893465999994557
+      },
+      {
+        "calls": 9,
+        "operator": "Activity Buffer Request",
+        "self_cpu_ms": 32.58518299999972,
+        "self_device_ms": 0.02793600000066999
+      },
+      {
+        "calls": 766,
+        "operator": "aten::mm",
+        "self_cpu_ms": 28.96204099999736,
+        "self_device_ms": 105.15632500000244
+      },
+      {
+        "calls": 34707,
+        "operator": "aten::as_strided",
+        "self_cpu_ms": 28.305322000004864,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 1584,
+        "operator": "aten::cat",
+        "self_cpu_ms": 19.681949999987307,
+        "self_device_ms": 12.740234999997554
+      },
+      {
+        "calls": 2561,
+        "operator": "aten::_local_scalar_dense",
+        "self_cpu_ms": 19.582405000004695,
+        "self_device_ms": 4.348927000015758
+      },
+      {
+        "calls": 13058,
+        "operator": "aten::reshape",
+        "self_cpu_ms": 17.03226099997919,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 6821,
+        "operator": "aten::transpose",
+        "self_cpu_ms": 14.413763999999174,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 7581,
+        "operator": "aten::select",
+        "self_cpu_ms": 14.286163000026136,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 3123,
+        "operator": "aten::_to_copy",
+        "self_cpu_ms": 13.41189699996147,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 784,
+        "operator": "aten::pow",
+        "self_cpu_ms": 13.157900999999145,
+        "self_device_ms": 2.539655000001241
+      },
+      {
+        "calls": 784,
+        "operator": "aten::mean",
+        "self_cpu_ms": 13.082916000002648,
+        "self_device_ms": 7.134707000002844
+      },
+      {
+        "calls": 2927,
+        "operator": "aten::resize_",
+        "self_cpu_ms": 12.766715000001629,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 6319,
+        "operator": "aten::unsqueeze",
+        "self_cpu_ms": 12.29005899997073,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::set_",
+        "self_cpu_ms": 10.185365999986656,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::unbind",
+        "self_cpu_ms": 9.7730489999704,
+        "self_device_ms": 0.0
+      }
+    ]
+  },
+  "hf_load_time_ms": 183853.20139299985,
+  "hf_output": "The Mixture of Experts (MoE) architecture is a type of neural network architecture that is used for decision-making tasks. It is a type of ensemble learning, where multiple models are combined to make a final decision. In the MoE architecture, each expert model is trained to make a specific decision, and the final decision is made by combining the outputs of all the expert models. The MoE architecture is often used in applications where the decision-making process is complex and requires multiple levels of expertise to make a final decision. The MoE architecture is also used in applications where the decision-making process is dynamic and requires the ability to adapt to",
+  "torch_profiler_enabled": true
+}
