@@ -84,8 +84,13 @@ To run the automated FP8 benchmark directly in a Google Colab notebook cell (inc
 # 2. Change working directory to the repo root
 %cd DWDP-Triton-MoE-Inference-Engine
 
-# 3. Launch the master benchmark suite (automatically triggers browser zip download when finished)
+# 3. Launch the master benchmark suite
 !bash scripts/run_all_benchmarks.sh
+
+# 4. Trigger direct browser download of the generated results ZIP archive
+from google.colab import files
+import glob
+files.download(sorted(glob.glob("*.zip"))[-1])
 ```
 
 ---
