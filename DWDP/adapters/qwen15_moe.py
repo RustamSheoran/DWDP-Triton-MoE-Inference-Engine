@@ -144,6 +144,12 @@ class DWDPMoEBlock(nn.Module):
             if self.shared_expert_gate is not None:
                 shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
 
+        if hidden_states.shape[0] <= self.config.ep_batch_size_threshold:
+            import logging
+            logging.getLogger(__name__).warning(
+                "EP decode path triggered but torch.distributed is not initialized. Falling back to DWDP."
+            )
+
         if not self.config.enable_profiling:
             router_output = self.router(hidden_states)
             dispatch_plan = self.dispatcher(
@@ -158,6 +164,12 @@ class DWDPMoEBlock(nn.Module):
                 execution_plan,
                 workspace=workspaces.comms if workspaces is not None else None,
             )
+            
+            for expert_id in communication_plan.remote_expert_ids.tolist():
+                self.executor.communication_engine.prefetch(expert_id)
+            for expert_id in communication_plan.remote_expert_ids.tolist():
+                self.executor.communication_engine.wait(expert_id)
+                
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
@@ -165,6 +177,8 @@ class DWDPMoEBlock(nn.Module):
                 communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
+            
+            self.executor.communication_engine.swap_buffers()
             merger_output = self.merger(
                 executor_output,
                 workspace=workspaces.merger if workspaces is not None else None,
@@ -187,6 +201,13 @@ class DWDPMoEBlock(nn.Module):
                     execution_plan,
                     workspace=workspaces.comms if workspaces is not None else None,
                 )
+                
+            with torch.autograd.profiler.record_function("dwdp.comms_prefetch"):
+                for expert_id in communication_plan.remote_expert_ids.tolist():
+                    self.executor.communication_engine.prefetch(expert_id)
+                for expert_id in communication_plan.remote_expert_ids.tolist():
+                    self.executor.communication_engine.wait(expert_id)
+
             with torch.autograd.profiler.record_function("dwdp.executor"):
                 executor_output = self.executor(
                     hidden_states,
@@ -195,6 +216,9 @@ class DWDPMoEBlock(nn.Module):
                     communication_plan,
                     workspace=workspaces.executor if workspaces is not None else None,
                 )
+                
+            with torch.autograd.profiler.record_function("dwdp.comms_swap"):
+                self.executor.communication_engine.swap_buffers()
             with torch.autograd.profiler.record_function("dwdp.merger"):
                 merger_output = self.merger(
                     executor_output,

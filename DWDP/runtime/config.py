@@ -28,6 +28,7 @@ class RuntimeConfig:
     future_distributed: bool = False
     world_size: int = 1
     local_rank: int = 0
+    ep_batch_size_threshold: int = 64
 
     def __post_init__(self) -> None:
         if not self.backend:

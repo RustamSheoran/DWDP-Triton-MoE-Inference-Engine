@@ -134,6 +134,26 @@ class ExecutionCommunicationEngine(nn.Module):
     def contains(self, expert_id: int) -> bool:
         return expert_id in self._registry.expert_ids
 
+    def prefetch(self, expert_id: int) -> None:
+        """Prefetch expert weights via C++ engine if available."""
+        if self._native_engine is not None:
+            self._native_engine.prefetch(expert_id)
+
+    def wait(self, expert_id: int) -> None:
+        """Wait for expert weights via C++ engine if available."""
+        if self._native_engine is not None:
+            self._native_engine.wait(expert_id)
+
+    def swap_buffers(self) -> None:
+        """Swap double buffers in C++ engine if available."""
+        if self._native_engine is not None:
+            self._native_engine.swap_buffers()
+
+    def is_native_available(self) -> bool:
+        """Return True if native C++ engine is active."""
+        return self._native_engine is not None
+
+
     def shutdown(self) -> None:
         """Shutdown the C++ engine and release all IPC handles."""
         if self._native_engine is not None:
