@@ -158,6 +158,10 @@ class TritonExpertExecutor(PyTorchExecutor):
             intermediate,
         )
         queues = build_persistent_tile_queues(tensors, active_workspace)
+        if active_workspace._host_copy_event is None:
+            active_workspace._host_copy_event = torch.cuda.Event()
+        active_workspace._host_copy_event.record()
+        
         if use_fp8:
             execute_persistent_qwen_fp8(tensors, queues)
         else:

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <stdexcept>
 
 #include "buffers.h"
@@ -106,8 +107,30 @@ void DoubleBufferedStaging::copyToNextAsync(
   if (buffers_[next_index] == nullptr) {
     throw std::logic_error("staging buffers are not allocated");
   }
-  DWDP_CUDA_CHECK(
-      cudaMemcpyAsync(buffers_[next_index], source, bytes, kind, stream));
+  
+  constexpr std::size_t kSliceSize = 2 * 1024 * 1024; // 2 MB slices
+  const std::size_t num_slices = (bytes + kSliceSize - 1) / kSliceSize;
+  
+  if (num_slices <= 1) {
+    DWDP_CUDA_CHECK(
+        cudaMemcpyAsync(buffers_[next_index], source, bytes, kind, stream));
+    return;
+  }
+
+  const int start_slice = device_id_ % num_slices;
+  for (std::size_t i = 0; i < num_slices; ++i) {
+    std::size_t slice = (start_slice + i) % num_slices;
+    std::size_t offset = slice * kSliceSize;
+    std::size_t slice_bytes = std::min(kSliceSize, bytes - offset);
+    
+    DWDP_CUDA_CHECK(
+        cudaMemcpyAsync(
+            static_cast<char*>(buffers_[next_index]) + offset,
+            static_cast<const char*>(source) + offset,
+            slice_bytes,
+            kind,
+            stream));
+  }
 }
 
 std::size_t DoubleBufferedStaging::capacity() const noexcept {

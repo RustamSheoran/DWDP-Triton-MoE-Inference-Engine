@@ -26,6 +26,8 @@ class ExecutorWorkspace:
     # They are grown together and reused across decode iterations.
     tensorlist_device_fields: dict[str, torch.Tensor] | None = None
     tensorlist_host_fields: dict[str, torch.Tensor] | None = None
+    _tensorlist_device_buffer: torch.Tensor | None = None
+    _tensorlist_host_buffer: torch.Tensor | None = None
     _tensorlist_capacity: int = 0
     _tensorlist_launch_key: tuple[int, int, int] | None = None
     _tensorlist_launch_dimensions: tuple[int, int, int] | None = None
@@ -47,12 +49,17 @@ class ExecutorWorkspace:
         None
     )
     _persistent_down_host: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None
+    _persistent_gather_device_buffer: torch.Tensor | None = None
+    _persistent_gather_host_buffer: torch.Tensor | None = None
+    _persistent_down_device_buffer: torch.Tensor | None = None
+    _persistent_down_host_buffer: torch.Tensor | None = None
     _persistent_queue_capacity: int = 0
     # The scheduler stores its compact execution description on the device.
     # Keep the last host copy here so repeated decode shapes do not force a
     # device-to-host read before every expert launch.
     _schedule_tensors: tuple[torch.Tensor, ...] | None = None
     _schedule_rows: tuple[tuple[int, int, int, int, int, int], ...] | None = None
+    _host_copy_event: torch.cuda.Event | None = None
 
     def _ensure_2d(
         self,
@@ -172,18 +179,25 @@ class ExecutorWorkspace:
         if needs_new_buffers:
             capacity = max(required, max(1, self._tensorlist_capacity * 2))
             names = tensorlist_field_names()
+            num_fields = len(names)
+            
+            self._tensorlist_device_buffer = torch.empty(
+                (num_fields, capacity), dtype=torch.int64, device=device
+            )
+            self._tensorlist_host_buffer = torch.empty(
+                (num_fields, capacity),
+                dtype=torch.int64,
+                device="cpu",
+                pin_memory=device.type == "cuda",
+            )
+            
             self.tensorlist_device_fields = {
-                name: torch.empty(capacity, dtype=torch.int64, device=device)
-                for name in names
+                name: self._tensorlist_device_buffer[i]
+                for i, name in enumerate(names)
             }
             self.tensorlist_host_fields = {
-                name: torch.empty(
-                    capacity,
-                    dtype=torch.int64,
-                    device="cpu",
-                    pin_memory=device.type == "cuda",
-                )
-                for name in names
+                name: self._tensorlist_host_buffer[i]
+                for i, name in enumerate(names)
             }
             self._tensorlist_capacity = capacity
         return self._tensorlist_capacity
@@ -258,6 +272,33 @@ class ExecutorWorkspace:
         assert self._tensorlist_provider_positions is not None
         return self._tensorlist_provider_positions
 
+    def get_tensorlist_provider_pointers_cpu(self, provider) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        if provider.expert_ids != self._tensorlist_provider_ids:
+            self.get_tensorlist_provider_positions(provider.expert_ids)
+            
+            max_id = max(provider.expert_ids) if provider.expert_ids else 0
+            gate_ptrs = torch.zeros(max_id + 1, dtype=torch.int64)
+            up_ptrs = torch.zeros(max_id + 1, dtype=torch.int64)
+            down_ptrs = torch.zeros(max_id + 1, dtype=torch.int64)
+            gate_lds = torch.zeros(max_id + 1, dtype=torch.int64)
+            up_lds = torch.zeros(max_id + 1, dtype=torch.int64)
+            down_lds = torch.zeros(max_id + 1, dtype=torch.int64)
+            
+            for expert_id, pos in self._tensorlist_provider_positions.items():
+                gate = provider.gate_up_weights.gate_weights.expert_weights[pos]
+                up = provider.gate_up_weights.up_weights.expert_weights[pos]
+                down = provider.down_weights.expert_weights[pos]
+                gate_ptrs[expert_id] = gate.data_ptr()
+                up_ptrs[expert_id] = up.data_ptr()
+                down_ptrs[expert_id] = down.data_ptr()
+                gate_lds[expert_id] = gate.stride(0)
+                up_lds[expert_id] = up.stride(0)
+                down_lds[expert_id] = down.stride(0)
+                
+            self._tensorlist_provider_ptrs_cpu = (gate_ptrs, up_ptrs, down_ptrs, gate_lds, up_lds, down_lds)
+            
+        return self._tensorlist_provider_ptrs_cpu
+
     def ensure_persistent_queue_capacity(
         self, required: int, *, device: torch.device
     ) -> int:
@@ -276,27 +317,21 @@ class ExecutorWorkspace:
         if needs_allocation:
             capacity = max(required, max(1, self._persistent_queue_capacity * 2))
 
-            def allocate_triplet() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-                return tuple(
-                    torch.empty(capacity, dtype=torch.int64, device=device)
-                    for _ in range(3)
-                )  # type: ignore[return-value]
+            self._persistent_gather_device_buffer = torch.empty(
+                (3, capacity), dtype=torch.int64, device=device
+            )
+            self._persistent_gather_host_buffer = torch.empty(
+                (3, capacity), dtype=torch.int64, device="cpu", pin_memory=device.type == "cuda"
+            )
+            self._persistent_down_device_buffer = torch.empty(
+                (3, capacity), dtype=torch.int64, device=device
+            )
+            self._persistent_down_host_buffer = torch.empty(
+                (3, capacity), dtype=torch.int64, device="cpu", pin_memory=device.type == "cuda"
+            )
 
-            def allocate_host_triplet() -> tuple[
-                torch.Tensor, torch.Tensor, torch.Tensor
-            ]:
-                return tuple(
-                    torch.empty(
-                        capacity,
-                        dtype=torch.int64,
-                        device="cpu",
-                        pin_memory=device.type == "cuda",
-                    )
-                    for _ in range(3)
-                )  # type: ignore[return-value]
-
-            gather = allocate_triplet()
-            down = allocate_triplet()
+            gather = tuple(self._persistent_gather_device_buffer[i] for i in range(3))
+            down = tuple(self._persistent_down_device_buffer[i] for i in range(3))
             (
                 self.persistent_gather_descriptor_indices,
                 self.persistent_gather_tile_m,
@@ -307,8 +342,14 @@ class ExecutorWorkspace:
                 self.persistent_down_tile_m,
                 self.persistent_down_tile_n,
             ) = down
-            self._persistent_gather_host = allocate_host_triplet()
-            self._persistent_down_host = allocate_host_triplet()
+            
+            self._persistent_gather_host = tuple(
+                self._persistent_gather_host_buffer[i] for i in range(3)
+            )
+            self._persistent_down_host = tuple(
+                self._persistent_down_host_buffer[i] for i in range(3)
+            )
+
             self.persistent_gather_counter = torch.zeros(
                 1, dtype=torch.int32, device=device
             )

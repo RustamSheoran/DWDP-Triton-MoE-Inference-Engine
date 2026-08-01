@@ -88,6 +88,9 @@ def build_persistent_tile_queues(
     down_host = workspace._persistent_down_host
     assert gather_host is not None and down_host is not None
 
+    if workspace._host_copy_event is not None:
+        workspace._host_copy_event.synchronize()
+
     gather_index = 0
     down_index = 0
     for descriptor in range(tensors.size):
@@ -121,10 +124,21 @@ def build_persistent_tile_queues(
     assert all(field is not None for field in device_queue_fields)
     gather_device = device_queue_fields[:3]
     down_device = device_queue_fields[3:6]
-    for destination, source in zip(gather_device, gather_host):
-        destination[:gather_size].copy_(source[:gather_size], non_blocking=True)
-    for destination, source in zip(down_device, down_host):
-        destination[:down_size].copy_(source[:down_size], non_blocking=True)
+    if workspace._persistent_gather_device_buffer is not None and workspace._persistent_gather_host_buffer is not None:
+        workspace._persistent_gather_device_buffer[:, :gather_size].copy_(
+            workspace._persistent_gather_host_buffer[:, :gather_size], non_blocking=True
+        )
+    else:
+        for destination, source in zip(gather_device, gather_host):
+            destination[:gather_size].copy_(source[:gather_size], non_blocking=True)
+
+    if workspace._persistent_down_device_buffer is not None and workspace._persistent_down_host_buffer is not None:
+        workspace._persistent_down_device_buffer[:, :down_size].copy_(
+            workspace._persistent_down_host_buffer[:, :down_size], non_blocking=True
+        )
+    else:
+        for destination, source in zip(down_device, down_host):
+            destination[:down_size].copy_(source[:down_size], non_blocking=True)
     # Counters are reset before enqueueing.  Atomic increments in the kernels
     # serialize claims; no global barrier or CPU participation is needed.
     workspace.persistent_gather_counter.zero_()

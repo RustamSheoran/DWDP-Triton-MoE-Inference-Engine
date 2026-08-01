@@ -115,101 +115,78 @@ class TensorList:
         # ExecutionPlan normally contains only active experts.  Retaining the
         # positive-count guard keeps TensorList safe for externally built
         # plans without ever traversing the full expert registry.
-        size = sum(int(schedule[2, index]) > 0 for index in range(schedule.shape[1]))
+        mask = schedule[2] > 0
+        valid_schedule = schedule[:, mask]
+        size = valid_schedule.shape[1]
+        
         capacity = workspace.ensure_tensorlist_capacity(size, device=device)
         fields = workspace.tensorlist_device_fields
         host = workspace.tensorlist_host_fields
         assert fields is not None and host is not None
 
-        # All metadata is integral except pointers, which are also safely
-        # represented by int64.  Dtype is intentionally encoded instead of
-        # retaining a Python dtype object in every descriptor record.
+        if workspace._host_copy_event is not None:
+            workspace._host_copy_event.synchronize()
+
+        if provider.gate_up_weights.dtype != hidden_states.dtype or provider.down_weights.dtype != hidden_states.dtype:
+            raise ValueError("grouped Triton execution requires matching activation and weight dtypes")
+        if provider.gate_up_weights.device != device or provider.down_weights.device != device:
+            raise ValueError("grouped Triton execution requires local weight storage on the activation device")
+
         dtype_code = _dtype_code(hidden_states.dtype)
         input_ptr = hidden_states.data_ptr()
         token_index_ptr = dispatch_plan.assignments.packed_token_indices.data_ptr()
         routing_weight_ptr = dispatch_plan.assignments.packed_routing_weights.data_ptr()
-        provider_positions = workspace.get_tensorlist_provider_positions(
-            provider.expert_ids
-        )
-        gate_weights = provider.gate_up_weights.gate_weights.expert_weights
-        up_weights = provider.gate_up_weights.up_weights.expert_weights
-        down_weights = provider.down_weights.expert_weights
 
-        max_m = 0
-        descriptor_index = 0
-        for schedule_index in range(schedule.shape[1]):
-            token_count = int(schedule[2, schedule_index])
-            if token_count == 0:
-                continue
-            index = descriptor_index
-            descriptor_index += 1
-            expert_id = int(schedule[0, schedule_index])
-            token_offset = int(schedule[1, schedule_index])
-            try:
-                provider_index = provider_positions[expert_id]
-            except KeyError as exc:
-                raise KeyError(
-                    f"TensorList has no Qwen weights for expert {expert_id}"
-                ) from exc
-            gate = gate_weights[provider_index]
-            up = up_weights[provider_index]
-            down = down_weights[provider_index]
-            if (
-                gate.dtype != hidden_states.dtype
-                or up.dtype != hidden_states.dtype
-                or down.dtype != hidden_states.dtype
-            ):
-                raise ValueError(
-                    "grouped Triton execution requires matching activation and weight dtypes"
-                )
-            if gate.device != device or up.device != device or down.device != device:
-                raise ValueError(
-                    "grouped Triton execution requires local weight storage on the activation device"
-                )
-            # Explicit field writes keep the construction path free of
-            # short-lived per-expert Python records and nested descriptors.
-            host["input_ptrs"][index] = input_ptr
-            host["token_index_ptrs"][index] = token_index_ptr
-            host["routing_weight_ptrs"][index] = routing_weight_ptr
-            host["gate_weight_ptrs"][index] = gate.data_ptr()
-            host["up_weight_ptrs"][index] = up.data_ptr()
-            host["down_weight_ptrs"][index] = down.data_ptr()
-            host["intermediate_ptrs"][index] = (
-                intermediate.data_ptr()
-                + token_offset * intermediate.stride(0) * intermediate.element_size()
+        gate_ptrs_map, up_ptrs_map, down_ptrs_map, gate_lds_map, up_lds_map, down_lds_map = workspace.get_tensorlist_provider_pointers_cpu(provider)
+        
+        expert_ids = valid_schedule[0]
+        token_offsets = valid_schedule[1]
+        token_counts = valid_schedule[2]
+        priorities = valid_schedule[3]
+        stream_ids = valid_schedule[4]
+
+        host["input_ptrs"][:size] = input_ptr
+        host["token_index_ptrs"][:size] = token_index_ptr
+        host["routing_weight_ptrs"][:size] = routing_weight_ptr
+        
+        host["gate_weight_ptrs"][:size] = gate_ptrs_map[expert_ids]
+        host["up_weight_ptrs"][:size] = up_ptrs_map[expert_ids]
+        host["down_weight_ptrs"][:size] = down_ptrs_map[expert_ids]
+        
+        host["intermediate_ptrs"][:size] = intermediate.data_ptr() + token_offsets * (intermediate.stride(0) * intermediate.element_size())
+        host["output_ptrs"][:size] = packed_outputs.data_ptr() + token_offsets * (packed_outputs.stride(0) * packed_outputs.element_size())
+        host["weighted_output_ptrs"][:size] = weighted_outputs.data_ptr() + token_offsets * (weighted_outputs.stride(0) * weighted_outputs.element_size())
+        
+        host["quantization_ptrs"][:size] = 0
+        host["expert_ids"][:size] = expert_ids
+        host["token_offsets"][:size] = token_offsets
+        host["token_counts"][:size] = token_counts
+        host["m"][:size] = token_counts
+        
+        host["n"][:size] = packed_outputs.shape[1]
+        host["k"][:size] = hidden_states.shape[1]
+        host["intermediate_n"][:size] = intermediate.shape[1]
+        
+        host["input_ld"][:size] = hidden_states.stride(0)
+        host["gate_ld"][:size] = gate_lds_map[expert_ids]
+        host["up_ld"][:size] = up_lds_map[expert_ids]
+        host["down_ld"][:size] = down_lds_map[expert_ids]
+        host["output_ld"][:size] = packed_outputs.stride(0)
+        
+        host["dtype_codes"][:size] = dtype_code
+        host["workspace_indices"][:size] = torch.arange(size, dtype=torch.int64)
+        host["execution_priorities"][:size] = priorities
+        host["stream_ids"][:size] = stream_ids
+        
+        max_m = int(torch.max(token_counts).item()) if size > 0 else 0
+
+        if workspace._tensorlist_device_buffer is not None and workspace._tensorlist_host_buffer is not None:
+            workspace._tensorlist_device_buffer[:, :size].copy_(
+                workspace._tensorlist_host_buffer[:, :size], non_blocking=True
             )
-            host["output_ptrs"][index] = (
-                packed_outputs.data_ptr()
-                + token_offset
-                * packed_outputs.stride(0)
-                * packed_outputs.element_size()
-            )
-            host["weighted_output_ptrs"][index] = (
-                weighted_outputs.data_ptr()
-                + token_offset
-                * weighted_outputs.stride(0)
-                * weighted_outputs.element_size()
-            )
-            host["quantization_ptrs"][index] = 0
-            host["expert_ids"][index] = expert_id
-            host["token_offsets"][index] = token_offset
-            host["token_counts"][index] = token_count
-            host["m"][index] = token_count
-            host["n"][index] = packed_outputs.shape[1]
-            host["k"][index] = hidden_states.shape[1]
-            host["intermediate_n"][index] = intermediate.shape[1]
-            host["input_ld"][index] = hidden_states.stride(0)
-            host["gate_ld"][index] = gate.stride(0)
-            host["up_ld"][index] = up.stride(0)
-            host["down_ld"][index] = down.stride(0)
-            host["output_ld"][index] = packed_outputs.stride(0)
-            host["dtype_codes"][index] = dtype_code
-            host["workspace_indices"][index] = index
-            host["execution_priorities"][index] = int(schedule[3, schedule_index])
-            host["stream_ids"][index] = int(schedule[4, schedule_index])
-            max_m = max(max_m, token_count)
-        for name, host_field in host.items():
-            fields[name][:size].copy_(host_field[:size], non_blocking=True)
+        else:
+            for name, host_field in host.items():
+                fields[name][:size].copy_(host_field[:size], non_blocking=True)
 
         return cls(
             size=size,
