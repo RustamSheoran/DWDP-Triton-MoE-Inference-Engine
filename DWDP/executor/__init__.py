@@ -12,6 +12,7 @@ from .outputs import (
 from .pytorch import PyTorchExecutor
 from .registry import build_executor, get_executor_class, register_executor
 from .triton import TritonExpertExecutor
+from .triton_tma import TritonTMAFP8Executor
 from .weights import (
     ExpertMajorMatrixView,
     ExpertWeightProvider,
@@ -39,6 +40,7 @@ __all__ = [
     "PyTorchExecutor",
     "QwenSwiGLUWeightProvider",
     "TritonExpertExecutor",
+    "TritonTMAFP8Executor",
     "TensorList",
     "WeightFormat",
     "build_executor",

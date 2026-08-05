@@ -147,3 +147,52 @@ def cleanup_distributed() -> None:
             logger.info("Destroyed torch.distributed process group")
         except Exception as e:
             logger.error("Failed to destroy process group: %s", e)
+
+
+def bootstrap_dwdp_distributed(
+    experts: "ExpertRegistry",
+    communication_engine: Any,
+    world_size: int,
+    rank: int,
+) -> GlobalExpertTable | None:
+    """Bootstrap DWDP distributed: init process group, build expert table, exchange IPC handles.
+
+    This is the entry point called by the adapter after model load but before
+    the first forward pass. It:
+
+    1. Initializes torch.distributed if world_size > 1
+    2. Builds the GlobalExpertTable and registers local experts
+    3. Exchanges IPC handles via all_gather_object
+    4. Registers remote IPC experts with the C++ CommunicationEngine
+
+    Returns the table so the adapter can attach it to the comms_planner.
+    """
+    if world_size <= 1:
+        return None
+
+    initialize_distributed(world_size, rank)
+
+    table = GlobalExpertTable(rank, world_size)
+    table.register_local_experts(experts)
+    table.exchange_handles()
+
+    registered = 0
+    for expert_id in table.remote_expert_ids():
+        mapping = table.get_mapping(expert_id)
+        if mapping.ipc_handle is None:
+            continue
+        if communication_engine.register_remote_expert(
+            expert_id, mapping.ipc_handle, mapping.size_bytes
+        ):
+            registered += 1
+
+    logger.info(
+        "DWDP distributed bootstrap complete on rank %d/%d: "
+        "%d local experts, %d remote experts, %d IPC handles registered",
+        rank,
+        world_size,
+        len(table.local_expert_ids()),
+        len(table.remote_expert_ids()),
+        registered,
+    )
+    return table

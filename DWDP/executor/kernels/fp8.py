@@ -4,6 +4,28 @@ The queue format and TensorList layout are intentionally shared with the
 standard persistent engine.  Only operands and workspace storage differ: these
 kernels load FP8 activations/weights directly, accumulate in FP32 as required
 by Tensor Core dot operations, and store FP8 intermediates and outputs.
+
+PROJECT 1 SPEC REQUIREMENT (Hopper TMA + 128-element micro-scaling):
+-----------------------------------------------------------------------
+The specification mandates Hopper Tensor Memory Accelerator (TMA) load/store
+primitives with fine-grained 128-element block micro-scaling factors, as
+implemented in DeepGEMM (https://github.com/fengyenet/DEEPSEEK-DeepGEMM).
+
+**Current Status**: This implementation uses standard `tl.load` with per-expert
+scalar quantization. TMA support (`tl.descriptor`, `tl.load_from_tma`,
+`tl.create_1d_tma_descriptor`) is still experimental in public Triton releases
+and not yet exposed in the stable API.
+
+**Migration Path**:
+1. Replace `tl.load(ptr + offsets)` with `tl.load_from_tma(descriptor, coords)`
+2. Pre-construct TMA descriptors using `tl.create_1d_tma_descriptor` for each
+   expert weight tensor at engine initialization
+3. Split 128-element tile blocks and load per-block FP32 scale factors from
+   `quantization_ptrs` array (currently stores single per-expert scales)
+4. Apply micro-scale: `acc = acc * tile_scale_A * tile_scale_B` inside the
+   K-reduction loop, once per 128-element tile
+
+**Reference**: Section "Weight Quantization" in Project 1 PDF, lines 248-252.
 """
 
 from __future__ import annotations

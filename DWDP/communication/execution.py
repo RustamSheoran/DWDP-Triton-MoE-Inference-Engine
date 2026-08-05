@@ -153,6 +153,47 @@ class ExecutionCommunicationEngine(nn.Module):
         """Return True if native C++ engine is active."""
         return self._native_engine is not None
 
+    def ensure_native(self, device: torch.device | None = None) -> bool:
+        """Eagerly initialize the native engine before the first forward pass.
+
+        Distributed startup must register remote IPC experts at load time
+        (Project 1 spec), which happens before any ``getWeight`` call would
+        have lazily constructed the engine.
+        """
+
+        if device is None:
+            for expert_id in self._registry.expert_ids:
+                for parameter in self._registry.get(expert_id).parameters(recurse=True):
+                    if parameter.device.type == "cuda":
+                        device = parameter.device
+                        break
+                if device is not None:
+                    break
+        if device is None:
+            return False
+        return self._ensure_native_engine(device)
+
+    def register_remote_expert(
+        self, expert_id: int, ipc_handle: bytes, size_bytes: int
+    ) -> bool:
+        """Register a peer rank's expert weights through its CUDA IPC handle.
+
+        Returns True when the C++ engine accepted the handle. Remote experts
+        registered this way become prefetchable over NVLink P2P.
+        """
+
+        if self._native_engine is None or not ipc_handle:
+            return False
+        try:
+            self._native_engine.register_ipc_expert(expert_id, ipc_handle, size_bytes)
+            self._native_registered.add(expert_id)
+            return True
+        except Exception:
+            logger.warning(
+                "failed to register remote expert %d via IPC", expert_id, exc_info=True
+            )
+            return False
+
 
     def shutdown(self) -> None:
         """Shutdown the C++ engine and release all IPC handles."""

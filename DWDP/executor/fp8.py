@@ -74,3 +74,73 @@ def quantize_activations_once(
 
 def _is_fp8(dtype: torch.dtype) -> bool:
     return "float8" in str(dtype)
+
+
+MICRO_SCALE_BLOCK = 128
+
+
+def _fp8_max(dtype: torch.dtype) -> float:
+    return 448.0 if "e4m3" in str(dtype) else 57344.0
+
+
+def quantize_activations_blockwise(
+    source: torch.Tensor, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize activations to FP8 with one scale per (token, 128-channel block).
+
+    This is the activation half of the fine-grained scheme the Hopper TMA
+    kernel expects. A single scalar per tensor throws away far too much range
+    when one channel block is much hotter than its neighbours; scoping the
+    scale to 128 channels keeps each block's values near the top of the FP8
+    range without touching the others.
+
+    Returns ``(fp8_values [M, K], scales [M, ceil(K/128)] float32)``.
+    """
+
+    if source.ndim != 2:
+        raise ValueError("activation quantization expects a 2D [tokens, channels] tensor")
+
+    rows, channels = source.shape
+    blocks = (channels + MICRO_SCALE_BLOCK - 1) // MICRO_SCALE_BLOCK
+    padded = blocks * MICRO_SCALE_BLOCK
+
+    work = source.float()
+    if padded != channels:
+        work = torch.nn.functional.pad(work, (0, padded - channels))
+
+    tiled = work.view(rows, blocks, MICRO_SCALE_BLOCK)
+    scales = tiled.abs().amax(dim=-1).clamp(min=1e-5) / _fp8_max(dtype)
+    quantized = (tiled / scales.unsqueeze(-1)).view(rows, padded)[:, :channels]
+
+    return quantized.to(dtype), scales.contiguous()
+
+
+def quantize_weights_blockwise(
+    weight: torch.Tensor, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Quantize a [N, K] weight matrix to FP8 with one scale per 128x128 block.
+
+    Returns ``(fp8_values [N, K], scales [ceil(N/128), ceil(K/128)] float32)``.
+    """
+
+    if weight.ndim != 2:
+        raise ValueError("weight quantization expects a 2D [out, in] tensor")
+
+    out_features, in_features = weight.shape
+    n_blocks = (out_features + MICRO_SCALE_BLOCK - 1) // MICRO_SCALE_BLOCK
+    k_blocks = (in_features + MICRO_SCALE_BLOCK - 1) // MICRO_SCALE_BLOCK
+    padded_n = n_blocks * MICRO_SCALE_BLOCK
+    padded_k = k_blocks * MICRO_SCALE_BLOCK
+
+    work = weight.float()
+    if padded_n != out_features or padded_k != in_features:
+        work = torch.nn.functional.pad(
+            work, (0, padded_k - in_features, 0, padded_n - out_features)
+        )
+
+    tiled = work.view(n_blocks, MICRO_SCALE_BLOCK, k_blocks, MICRO_SCALE_BLOCK)
+    scales = tiled.abs().amax(dim=(1, 3)).clamp(min=1e-5) / _fp8_max(dtype)
+    quantized = tiled / scales[:, None, :, None]
+    quantized = quantized.view(padded_n, padded_k)[:out_features, :in_features]
+
+    return quantized.to(dtype), scales.contiguous()

@@ -5,6 +5,11 @@ from typing import Any
 import torch
 from torch import nn
 
+try:
+    import torch.distributed as dist
+except ImportError:  # pragma: no cover - torch always ships distributed on CUDA builds
+    dist = None
+
 from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, build_executor
 from DWDP.merger import MergerConfig, build_merger
@@ -69,6 +74,8 @@ class DWDPMoEBlock(nn.Module):
         self.shared_expert = getattr(spec.module, "shared_expert", None)
         self.shared_expert_gate = getattr(spec.module, "shared_expert_gate", None)
         self.context = context if context is not None else RuntimeContext.from_config(config)
+        # Populated by attach_expert_table() after distributed handle exchange.
+        self.expert_table = None
 
         self._shared_stream: torch.cuda.Stream | None = None
         if self.shared_expert is not None and torch.cuda.is_available():
@@ -126,6 +133,95 @@ class DWDPMoEBlock(nn.Module):
             )
         )
 
+    def attach_expert_table(self, table) -> None:
+        """Bind the post-handle-exchange GlobalExpertTable to this layer."""
+
+        self.expert_table = table
+        attach = getattr(self.comms_planner, "attach_expert_table", None)
+        if attach is not None:
+            attach(table)
+
+    def _ep_decode_forward(self, hidden_states: torch.Tensor):
+        """Decode-phase Expert-Parallel path (Project 1 hybrid executor).
+
+        At small batch sizes the compute-to-weight ratio collapses, so
+        streaming a whole expert's weights over NVLink can no longer be hidden
+        behind the GEMM. EP is the cheaper side of the trade here: it moves the
+        few token activations instead, via two all_to_all exchanges (dispatch
+        then combine) around purely local expert compute.
+        """
+
+        router_output = self.router(hidden_states)
+        topk_indices = router_output.topk_indices
+        topk_weights = router_output.topk_weights
+
+        world_size = self.config.world_size
+        rank = self.config.local_rank
+        num_tokens, hidden_size = hidden_states.shape
+        experts_per_rank = max(1, (self.num_experts + world_size - 1) // world_size)
+
+        # Flatten (token, slot) pairs and bucket them by owning rank.
+        flat_experts = topk_indices.reshape(-1)
+        flat_tokens = torch.arange(
+            num_tokens, device=hidden_states.device
+        ).repeat_interleave(topk_indices.shape[1])
+        flat_weights = topk_weights.reshape(-1)
+        target_ranks = torch.clamp(flat_experts // experts_per_rank, max=world_size - 1)
+
+        order = torch.argsort(target_ranks, stable=True)
+        sorted_ranks = target_ranks[order]
+        send_tokens = hidden_states[flat_tokens[order]]
+        send_experts = flat_experts[order]
+
+        send_counts = torch.bincount(sorted_ranks, minlength=world_size)
+        recv_counts = torch.empty_like(send_counts)
+        dist.all_to_all_single(recv_counts, send_counts)
+
+        send_list = send_counts.tolist()
+        recv_list = recv_counts.tolist()
+        total_recv = int(sum(recv_list))
+
+        # Dispatch: activations and their expert ids to the owning ranks.
+        recv_tokens = torch.empty(
+            (total_recv, hidden_size),
+            device=hidden_states.device,
+            dtype=hidden_states.dtype,
+        )
+        dist.all_to_all_single(
+            recv_tokens, send_tokens, recv_list, send_list
+        )
+        recv_experts = torch.empty(
+            total_recv, device=hidden_states.device, dtype=send_experts.dtype
+        )
+        dist.all_to_all_single(
+            recv_experts, send_experts, recv_list, send_list
+        )
+
+        # Local compute: every received token is routed to a locally-owned expert.
+        computed = torch.zeros_like(recv_tokens)
+        if total_recv:
+            local_lo = rank * experts_per_rank
+            local_hi = min(self.num_experts, (rank + 1) * experts_per_rank)
+            for expert_id in range(local_lo, local_hi):
+                mask = recv_experts == expert_id
+                if not bool(mask.any()):
+                    continue
+                module = self.executor.communication_engine.getWeight(expert_id).module
+                computed[mask] = module(recv_tokens[mask]).to(computed.dtype)
+
+        # Combine: results travel back along the reversed partition.
+        returned = torch.empty_like(send_tokens)
+        dist.all_to_all_single(
+            returned, computed, send_list, recv_list
+        )
+
+        # Undo the sort, apply routing weights, and reduce the top-k slots.
+        weighted = returned * flat_weights[order].unsqueeze(-1).to(returned.dtype)
+        output = torch.zeros_like(hidden_states)
+        output.index_add_(0, flat_tokens[order], weighted)
+
+        return output, router_output
+
     def forward(self, hidden_states: torch.Tensor, *args, **kwargs):
         """Execute the MoE block through DWDP while preserving HF signature."""
 
@@ -144,11 +240,22 @@ class DWDPMoEBlock(nn.Module):
             if self.shared_expert_gate is not None:
                 shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
 
-        if hidden_states.shape[0] <= self.config.ep_batch_size_threshold:
-            import logging
-            logging.getLogger(__name__).warning(
-                "EP decode path triggered but torch.distributed is not initialized. Falling back to DWDP."
-            )
+        # Hybrid executor: decode-EP below the threshold, prefill-DWDP above it.
+        if (
+            hidden_states.shape[0] <= self.config.ep_batch_size_threshold
+            and self.config.world_size > 1
+            and dist is not None
+            and dist.is_available()
+            and dist.is_initialized()
+        ):
+            output, router_output = self._ep_decode_forward(hidden_states)
+            if shared_output is not None:
+                if self._shared_stream is not None:
+                    torch.cuda.current_stream().wait_stream(self._shared_stream)
+                output = output + shared_output
+            if self.returns_router_logits:
+                return output, router_output.router_logits
+            return output
 
         if not self.config.enable_profiling:
             router_output = self.router(hidden_states)
@@ -281,15 +388,52 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
         self._patcher = ModulePatcher()
         self.moe_layer_specs = specs
         shared_context = RuntimeContext.from_config(self.config)
+
+        blocks: list[DWDPMoEBlock] = []
         for spec in specs:
             replacement = DWDPMoEBlock(spec, self.config, context=shared_context)
+            blocks.append(replacement)
             self._patcher.replace(
                 name=spec.name,
                 parent=spec.parent,
                 child_name=spec.child_name,
                 replacement=replacement,
             )
+
+        self._bootstrap_distributed(specs, blocks)
         return len(specs)
+
+    def _bootstrap_distributed(
+        self, specs: tuple[MoELayerSpec, ...], blocks: list[DWDPMoEBlock]
+    ) -> None:
+        """Register CUDA IPC handles at load time, as the Project 1 spec requires.
+
+        Each MoE layer owns its own expert modules and therefore its own
+        communication engine, so the handle exchange runs per layer. The
+        process group itself is initialized once by the first call.
+        """
+
+        if self.config.world_size <= 1:
+            return
+
+        from DWDP.communication.distributed import bootstrap_dwdp_distributed
+
+        self.expert_tables = []
+        for spec, block in zip(specs, blocks):
+            engine = block.executor.communication_engine
+            # The engine is normally constructed lazily on the first getWeight
+            # call; IPC registration has to happen before the first forward.
+            engine.ensure_native()
+            table = bootstrap_dwdp_distributed(
+                experts=block.executor.communication_engine._registry,
+                communication_engine=engine,
+                world_size=self.config.world_size,
+                rank=self.config.local_rank,
+            )
+            if table is None:
+                continue
+            self.expert_tables.append(table)
+            block.attach_expert_table(table)
 
     def restore_model(self) -> int:
         """Restore native Hugging Face MoE blocks."""
