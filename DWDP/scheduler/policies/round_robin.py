@@ -162,13 +162,13 @@ class RoundRobinScheduler(BaseScheduler):
     ) -> SchedulerStatistics:
         metadata = dispatch_plan.metadata
         num_empty = metadata.num_experts - active_count
-        if active_count == 0:
+        # These two scalars are the only device->host sync on the decode path,
+        # and they feed diagnostics only. At MINIMAL metadata they are skipped
+        # entirely, which is what makes the region CUDA-graph capturable.
+        if active_count == 0 or self.config.metadata_level != SchedulerMetadataLevel.FULL:
             max_count = 0
             min_count = 0
         else:
-            # Keep diagnostic statistics off the scalar CUDA path.  A compact
-            # transfer creates one host dependency instead of serializing two
-            # reduction results through ``Tensor.item()``.
             max_count, min_count = (
                 int(value)
                 for value in torch.stack((active_counts.max(), active_counts.min()))

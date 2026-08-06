@@ -76,16 +76,34 @@ class DWDPMoEBlock(nn.Module):
         self.context = context if context is not None else RuntimeContext.from_config(config)
         # Populated by attach_expert_table() after distributed handle exchange.
         self.expert_table = None
+        # Set by enable_cuda_graphs(); None means eager execution.
+        self._graph_runner = None
 
         self._shared_stream: torch.cuda.Stream | None = None
         if self.shared_expert is not None and torch.cuda.is_available():
             self._shared_stream = torch.cuda.Stream()
+
+        # The reference "counting_scatter" dispatch computes destination slots
+        # in a Python loop over every token-expert assignment on the host. That
+        # is the largest single source of decode overhead and it blocks CUDA
+        # graph capture. Prefer the device-resident Triton path when it is
+        # actually available; the two are equivalence-tested.
+        dispatch_algorithm = "counting_scatter"
+        if torch.cuda.is_available():
+            try:
+                from DWDP.dispatcher.kernels.triton import TRITON_AVAILABLE
+
+                if TRITON_AVAILABLE:
+                    dispatch_algorithm = "triton_counting_scatter"
+            except ImportError:
+                pass
 
         self.dispatcher = build_dispatcher(
             DispatcherConfig(
                 num_experts=spec.num_experts,
                 dispatcher_type=config.dispatcher_type,
                 validate_inputs=False,
+                algorithm=dispatch_algorithm,
             )
         )
         self.scheduler = build_scheduler(
@@ -120,6 +138,11 @@ class DWDPMoEBlock(nn.Module):
                 enable_statistics=config.enable_statistics,
                 enable_profiling=config.enable_profiling,
                 deterministic=config.deterministic,
+                # The merger below runs with apply_routing_weights=False, so it
+                # consumes weighted outputs and never reads the packed copy.
+                # Skipping it saves a [num_tokens * top_k, hidden] buffer per
+                # forward.
+                materialize_packed_outputs=False,
             ),
             spec.experts,
         )
@@ -222,6 +245,63 @@ class DWDPMoEBlock(nn.Module):
 
         return output, router_output
 
+    def _dwdp_pipeline(self, hidden_states: torch.Tensor):
+        """Run router -> dispatch -> schedule -> plan -> execute -> merge.
+
+        Returns ``(hidden_states, router_logits)``. Only these two tensors
+        cross the CUDA graph boundary; the rest of RouterOutput stays inside so
+        replay does not clone metadata the caller never reads. Returning the
+        logits rather than recomputing them outside avoids running the router
+        twice per token, since this adapter reports router logits by default.
+
+        Kept free of host syncs so the region is capturable. The remote-expert
+        prefetch loop lives in ``forward`` because it calls ``.tolist()``.
+        """
+
+        workspaces = self.context.workspaces
+        router_output = self.router(hidden_states)
+        dispatch_plan = self.dispatcher(
+            router_output,
+            workspace=workspaces.dispatch if workspaces is not None else None,
+        )
+        execution_plan = self.scheduler(
+            dispatch_plan,
+            workspace=workspaces.scheduler if workspaces is not None else None,
+        )
+        communication_plan = self.comms_planner(
+            execution_plan,
+            workspace=workspaces.comms if workspaces is not None else None,
+        )
+        executor_output = self.executor(
+            hidden_states,
+            dispatch_plan,
+            execution_plan,
+            communication_plan,
+            workspace=workspaces.executor if workspaces is not None else None,
+        )
+        merger_output = self.merger(
+            executor_output,
+            workspace=workspaces.merger if workspaces is not None else None,
+        )
+        return merger_output.hidden_states, router_output.router_logits
+
+    def enable_cuda_graphs(self, warmup_steps: int = 3) -> bool:
+        """Route the DWDP pipeline through a shape-keyed CUDA graph runner.
+
+        Returns True when graph execution is active for this block. Capture is
+        lazy: the first forward at each new shape captures, later ones replay.
+        """
+
+        if not torch.cuda.is_available():
+            return False
+        from DWDP.runtime.cuda_graph import CUDAGraphRunner
+
+        self._graph_runner = CUDAGraphRunner(
+            lambda hidden_states: self._dwdp_pipeline(hidden_states),
+            warmup_steps=warmup_steps,
+        )
+        return True
+
     def forward(self, hidden_states: torch.Tensor, *args, **kwargs):
         """Execute the MoE block through DWDP while preserving HF signature."""
 
@@ -258,41 +338,52 @@ class DWDPMoEBlock(nn.Module):
             return output
 
         if not self.config.enable_profiling:
-            router_output = self.router(hidden_states)
-            dispatch_plan = self.dispatcher(
-                router_output,
-                workspace=workspaces.dispatch if workspaces is not None else None,
-            )
-            execution_plan = self.scheduler(
-                dispatch_plan,
-                workspace=workspaces.scheduler if workspaces is not None else None,
-            )
-            communication_plan = self.comms_planner(
-                execution_plan,
-                workspace=workspaces.comms if workspaces is not None else None,
-            )
-            
-            for expert_id in communication_plan.remote_expert_ids.tolist():
-                self.executor.communication_engine.prefetch(expert_id)
-            for expert_id in communication_plan.remote_expert_ids.tolist():
-                self.executor.communication_engine.wait(expert_id)
-                
-            executor_output = self.executor(
-                hidden_states,
-                dispatch_plan,
-                execution_plan,
-                communication_plan,
-                workspace=workspaces.executor if workspaces is not None else None,
-            )
-            
-            self.executor.communication_engine.swap_buffers()
-            merger_output = self.merger(
-                executor_output,
-                workspace=workspaces.merger if workspaces is not None else None,
-            )
+            # CUDA graph path when enabled. On single-GPU the prefetch loop is
+            # a no-op (empty remote list), so it stays outside to keep the
+            # captured region free of the .tolist() device->host sync.
+            if self._graph_runner is not None:
+                output_hidden, router_logits = self._graph_runner(
+                    hidden_states=hidden_states
+                )
+            else:
+                router_output = self.router(hidden_states)
+                router_logits = router_output.router_logits
+                dispatch_plan = self.dispatcher(
+                    router_output,
+                    workspace=workspaces.dispatch if workspaces is not None else None,
+                )
+                execution_plan = self.scheduler(
+                    dispatch_plan,
+                    workspace=workspaces.scheduler if workspaces is not None else None,
+                )
+                communication_plan = self.comms_planner(
+                    execution_plan,
+                    workspace=workspaces.comms if workspaces is not None else None,
+                )
+
+                for expert_id in communication_plan.remote_expert_ids.tolist():
+                    self.executor.communication_engine.prefetch(expert_id)
+                for expert_id in communication_plan.remote_expert_ids.tolist():
+                    self.executor.communication_engine.wait(expert_id)
+
+                executor_output = self.executor(
+                    hidden_states,
+                    dispatch_plan,
+                    execution_plan,
+                    communication_plan,
+                    workspace=workspaces.executor if workspaces is not None else None,
+                )
+
+                self.executor.communication_engine.swap_buffers()
+                merger_output = self.merger(
+                    executor_output,
+                    workspace=workspaces.merger if workspaces is not None else None,
+                )
+                output_hidden = merger_output.hidden_states
         else:
             with torch.autograd.profiler.record_function("dwdp.router"):
                 router_output = self.router(hidden_states)
+                router_logits = router_output.router_logits
             with torch.autograd.profiler.record_function("dwdp.dispatcher"):
                 dispatch_plan = self.dispatcher(
                     router_output,
@@ -331,7 +422,8 @@ class DWDPMoEBlock(nn.Module):
                     executor_output,
                     workspace=workspaces.merger if workspaces is not None else None,
                 )
-        output = merger_output.hidden_states
+            output_hidden = merger_output.hidden_states
+        output = output_hidden
 
         if shared_output is not None:
             if self._shared_stream is not None:
@@ -339,7 +431,7 @@ class DWDPMoEBlock(nn.Module):
             output = output + shared_output
 
         if self.returns_router_logits:
-            return output, router_output.router_logits
+            return output, router_logits
         return output
 
 
@@ -434,6 +526,40 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
                 continue
             self.expert_tables.append(table)
             block.attach_expert_table(table)
+
+    def enable_cuda_graphs(self, warmup_steps: int = 3) -> int:
+        """Enable CUDA graph capture on every patched MoE block.
+
+        Returns the number of blocks now backed by a graph runner. Capture is
+        lazy: the first forward at each input shape captures, later ones replay.
+        """
+
+        if not hasattr(self, "_patcher") or not self._patcher.records:
+            raise RuntimeError("patch_model() must run before enabling CUDA graphs")
+
+        enabled = 0
+        for record in self._patcher.records:
+            block = record.replacement
+            if isinstance(block, DWDPMoEBlock) and block.enable_cuda_graphs(
+                warmup_steps=warmup_steps
+            ):
+                enabled += 1
+        return enabled
+
+    def graph_statistics(self) -> dict[str, int]:
+        """Aggregate capture/replay counters across patched blocks."""
+
+        totals = {"captures": 0, "replays": 0, "fallbacks": 0}
+        if not hasattr(self, "_patcher"):
+            return totals
+        for record in self._patcher.records:
+            runner = getattr(record.replacement, "_graph_runner", None)
+            if runner is None:
+                continue
+            totals["captures"] += runner.stats.captures
+            totals["replays"] += runner.stats.replays
+            totals["fallbacks"] += runner.stats.fallbacks
+        return totals
 
     def restore_model(self) -> int:
         """Restore native Hugging Face MoE blocks."""

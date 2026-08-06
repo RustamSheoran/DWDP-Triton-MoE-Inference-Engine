@@ -19,13 +19,19 @@ def validate_executor_output(executor_output: ExecutorOutput) -> None:
     metadata = executor_output.output_metadata
     packed = executor_output.packed_expert_outputs
     weighted = executor_output.weighted_expert_outputs
-    if packed.ndim != 2 or weighted.ndim != 2:
+    # ``packed`` is optional: an executor configured with
+    # materialize_packed_outputs=False skips it because the Merger reads
+    # weighted outputs. Validate whichever tensors are present.
+    if weighted.ndim != 2:
         raise ValueError("executor output tensors must be rank-2")
-    if packed.shape != weighted.shape:
-        raise ValueError(
-            "packed and weighted expert outputs must have identical shapes"
-        )
-    num_assignments = packed.shape[0]
+    if packed is not None:
+        if packed.ndim != 2:
+            raise ValueError("executor output tensors must be rank-2")
+        if packed.shape != weighted.shape:
+            raise ValueError(
+                "packed and weighted expert outputs must have identical shapes"
+            )
+    num_assignments = weighted.shape[0]
     if metadata.inverse_permutation.numel() != num_assignments:
         raise ValueError("inverse_permutation length must match num assignments")
     if metadata.packed_routing_weights.numel() != num_assignments:

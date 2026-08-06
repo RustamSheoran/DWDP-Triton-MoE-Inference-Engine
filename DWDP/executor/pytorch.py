@@ -106,14 +106,21 @@ class PyTorchExecutor(BaseExecutor):
                     f"expected {(count, output_size)}"
                 )
 
-            packed_slice = packed_outputs[start:end]
-            if expert_output.dtype == output_dtype:
-                packed_slice.copy_(expert_output)
-                weight_source = packed_slice
+            if packed_outputs is not None:
+                packed_slice = packed_outputs[start:end]
+                if expert_output.dtype == output_dtype:
+                    packed_slice.copy_(expert_output)
+                    weight_source = packed_slice
+                else:
+                    packed_slice.copy_(expert_output.to(dtype=output_dtype))
+                    # Preserve reference rounding: routing is applied at the
+                    # expert's native precision, then written to output_dtype.
+                    weight_source = expert_output
             else:
-                packed_slice.copy_(expert_output.to(dtype=output_dtype))
-                # Preserve reference rounding: routing is applied at the
-                # expert's native precision, then written to output_dtype.
+                # Packed outputs are not materialized; multiply straight from
+                # the expert result. Same rounding as the branch above, which
+                # also multiplies at the expert's native precision whenever the
+                # dtypes differ.
                 weight_source = expert_output
             # Write weighted values directly to the final packed buffer.  The
             # previous path allocated a full temporary tensor and then copied
@@ -143,7 +150,6 @@ class PyTorchExecutor(BaseExecutor):
                 device=device,
                 workspace=active_workspace,
             )
-        assert packed_outputs is not None
         assert weighted_outputs is not None
 
         output_metadata = OutputMetadata(
@@ -200,7 +206,12 @@ class PyTorchExecutor(BaseExecutor):
         *,
         workspace: ExecutorWorkspace | None,
     ) -> tuple[tuple[int, int, int, int, int, int], ...]:
-        """Materialize scheduler fields without per-expert CUDA scalar reads."""
+        """Materialize scheduler fields without per-expert CUDA scalar reads.
+
+        Note: this is inherently a device->host transfer, so ``PyTorchExecutor``
+        cannot be CUDA-graph captured. The persistent Triton executor consumes
+        the same queue tensors on device and is capturable.
+        """
 
         if workspace is not None:
             return workspace.get_schedule_rows(
@@ -235,10 +246,16 @@ class PyTorchExecutor(BaseExecutor):
         dtype: torch.dtype,
         device: torch.device,
         workspace: ExecutorWorkspace | None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor | None, torch.Tensor]:
+        materialize_packed = self.config.materialize_packed_outputs
         if workspace is None:
+            packed = (
+                torch.empty(num_assignments, output_size, dtype=dtype, device=device)
+                if materialize_packed
+                else None
+            )
             return (
-                torch.empty(num_assignments, output_size, dtype=dtype, device=device),
+                packed,
                 torch.empty(num_assignments, output_size, dtype=dtype, device=device),
             )
         return workspace.get_output_buffers(
@@ -246,6 +263,7 @@ class PyTorchExecutor(BaseExecutor):
             output_size,
             dtype=dtype,
             device=device,
+            materialize_packed=materialize_packed,
         )
 
     def _gather_inputs(

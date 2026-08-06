@@ -92,6 +92,8 @@ class TritonExpertExecutor(PyTorchExecutor):
             )
         if self.config.max_tokens_per_expert is not None:
             counts = execution_plan.expert_counts
+            # ``.item()`` is a device->host sync and would break CUDA graph
+            # capture, so this guard is opt-in and off by default.
             if bool((counts > self.config.max_tokens_per_expert).any().item()):
                 raise ValueError(
                     "an expert received more than max_tokens_per_expert tokens"

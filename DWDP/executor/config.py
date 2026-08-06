@@ -16,6 +16,12 @@ class ExecutorConfig:
     enable_profiling: bool = False
     deterministic: bool = True
     max_tokens_per_expert: int | None = None
+    # The Merger reads exactly one of packed/weighted expert outputs, selected
+    # by MergerConfig.apply_routing_weights. Both are sized
+    # [num_tokens * top_k, hidden], so materializing the unread one costs a
+    # full assignment-scaled buffer per forward for nothing. Set False when the
+    # downstream merger consumes weighted outputs.
+    materialize_packed_outputs: bool = True
     allow_empty_experts: bool = True
     enable_distributed_placeholders: bool = True
     enable_async_placeholders: bool = True

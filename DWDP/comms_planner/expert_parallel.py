@@ -357,3 +357,6 @@ class ExpertParallelPlanner(BaseCommunicationPlanner):
             planner_policy=self.config.planner_policy,
             deterministic=self.config.deterministic,
         )
+
+
+register_communication_planner("expert_parallel", ExpertParallelPlanner)

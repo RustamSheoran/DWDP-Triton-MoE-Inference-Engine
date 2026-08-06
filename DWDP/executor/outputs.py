@@ -63,7 +63,10 @@ class ExecutionMetadata:
 class ExecutorOutput:
     """Packed expert outputs produced by the Executor."""
 
-    packed_expert_outputs: torch.Tensor
+    # ``None`` when the executor was configured with
+    # materialize_packed_outputs=False, i.e. the downstream Merger reads
+    # weighted outputs and the unweighted copy would never be consumed.
+    packed_expert_outputs: torch.Tensor | None
     weighted_expert_outputs: torch.Tensor
     expert_outputs: tuple[ExpertOutput, ...]
     output_metadata: OutputMetadata

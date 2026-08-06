@@ -30,9 +30,15 @@ class PyTorchMerger(BaseMerger):
             validate_executor_output(executor_output)
 
         metadata = executor_output.output_metadata
-        source = executor_output.packed_expert_outputs
         used_weighted = False
         if self.config.apply_routing_weights:
+            source = executor_output.packed_expert_outputs
+            if source is None:
+                raise ValueError(
+                    "apply_routing_weights=True requires the executor to "
+                    "materialize packed outputs; set "
+                    "ExecutorConfig(materialize_packed_outputs=True)"
+                )
             source = source * metadata.packed_routing_weights.unsqueeze(-1)
         else:
             source = executor_output.weighted_expert_outputs

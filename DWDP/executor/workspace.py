@@ -90,18 +90,29 @@ class ExecutorWorkspace:
         *,
         dtype: torch.dtype,
         device: torch.device,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return packed and weighted output buffers."""
+        materialize_packed: bool = True,
+    ) -> tuple[torch.Tensor | None, torch.Tensor]:
+        """Return the packed and weighted output buffers.
 
-        packed = self._ensure_2d(
-            "packed_expert_outputs",
+        Both are ``[num_assignments, output_size]`` where ``num_assignments``
+        is ``num_tokens * top_k``, so each is top_k times larger than a
+        token-major buffer. The Merger reads only one of them. When
+        ``materialize_packed`` is False the packed buffer is not allocated and
+        ``None`` is returned in its place.
+        """
+
+        weighted = self._ensure_2d(
+            "weighted_expert_outputs",
             num_assignments,
             output_size,
             dtype=dtype,
             device=device,
         )
-        weighted = self._ensure_2d(
-            "weighted_expert_outputs",
+        if not materialize_packed:
+            return None, weighted
+
+        packed = self._ensure_2d(
+            "packed_expert_outputs",
             num_assignments,
             output_size,
             dtype=dtype,

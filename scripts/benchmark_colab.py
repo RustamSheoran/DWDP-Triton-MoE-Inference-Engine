@@ -85,6 +85,15 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional path for machine-readable results.",
     )
+    parser.add_argument(
+        "--cuda-graphs",
+        action="store_true",
+        help=(
+            "Capture the DWDP MoE pipeline into CUDA graphs. Collapses the "
+            "per-layer kernel launch sequence into one graph launch per token. "
+            "Requires CUDA; ignored otherwise."
+        ),
+    )
     args = parser.parse_args()
     if (
         args.batch_size <= 0
@@ -509,10 +518,32 @@ def main() -> None:
     print(f"\n[STEP 4/4] Loading & Benchmarking DWDP-patched model ({active_quant})...", flush=True)
     dwdp_load_start = time.perf_counter()
     dwdp_backend = "triton" if torch.cuda.is_available() else "dwdp"
+    # executor_backend selects the actual expert-execution kernels. Without it
+    # the runtime silently falls back to ExecutorConfig's "pytorch" default,
+    # i.e. a per-expert Python loop, so the persistent Triton grouped-GEMM path
+    # never runs.
+    #
+    # It can only be enabled for genuinely floating-point weights. bitsandbytes
+    # 4bit/8bit store packed uint8 Params4bit, whose logical shape does not match
+    # the [out, in] contract QwenSwiGLUWeightProvider requires; selecting the
+    # Triton executor there raises "provider hidden size does not match
+    # activations" on the first forward.
+    if torch.cuda.is_available() and active_quant == "fp16":
+        dwdp_executor_backend = "triton"
+    else:
+        dwdp_executor_backend = "pytorch"
+        if torch.cuda.is_available():
+            print(
+                f"[EXECUTOR] {active_quant} weights are packed/quantized; using the "
+                "PyTorch executor. The persistent Triton grouped-GEMM path requires "
+                "fp16 weights.",
+                flush=True,
+            )
     dwdp_runtime = DWDPRuntime.from_pretrained(
         args.model,
         config=RuntimeConfig(
             backend=dwdp_backend,
+            executor_backend=dwdp_executor_backend,
             device="cuda",
             dtype=torch.float16,
             enable_profiling=args.profile,
@@ -522,7 +553,41 @@ def main() -> None:
     dwdp_load_time_ms = (time.perf_counter() - dwdp_load_start) * 1e3
     dwdp_runtime.eval()
     print(f"--> DWDP model loaded successfully in {dwdp_load_time_ms / 1000.0:.2f}s!", flush=True)
+
+    graph_blocks = 0
+    if args.cuda_graphs:
+        if not torch.cuda.is_available():
+            print("[CUDA GRAPHS] CUDA unavailable; running eager.", flush=True)
+        else:
+            adapter = getattr(dwdp_runtime, "adapter", None)
+            enable = getattr(adapter, "enable_cuda_graphs", None)
+            if enable is None:
+                print(
+                    "[CUDA GRAPHS] active adapter does not support graph capture; "
+                    "running eager.",
+                    flush=True,
+                )
+            else:
+                graph_blocks = enable(warmup_steps=args.warmup or 2)
+                print(
+                    f"[CUDA GRAPHS] capture enabled on {graph_blocks} MoE blocks. "
+                    "The first forward at each input shape captures; later "
+                    "forwards replay.",
+                    flush=True,
+                )
+
     dwdp_metrics, dwdp_text, dwdp_token_ids = benchmark(dwdp_runtime, tokenizer, args)
+
+    if graph_blocks:
+        adapter = getattr(dwdp_runtime, "adapter", None)
+        stats = getattr(adapter, "graph_statistics", lambda: {})()
+        print(f"[CUDA GRAPHS] {stats}", flush=True)
+        if stats.get("replays", 0) == 0:
+            print(
+                "[CUDA GRAPHS] WARNING: zero replays. Capture failed and every "
+                "forward fell back to eager; these numbers do not measure graphs.",
+                flush=True,
+            )
     dwdp_profile = (
         profile_generation(dwdp_runtime, tokenizer, args) if args.profile else {}
     )

@@ -203,6 +203,12 @@ if [[ -n "${HF_TOKEN:-}" ]]; then
   TOKEN_ARG=("--hf-token" "${HF_TOKEN}")
 fi
 
+# Opt into CUDA graph capture with CUDA_GRAPHS=1.
+GRAPH_ARG=()
+if [[ "${CUDA_GRAPHS:-0}" == "1" ]]; then
+  GRAPH_ARG=("--cuda-graphs")
+fi
+
 "${PYTHON_BIN}" "${SCRIPT_DIR}/benchmark_colab.py" \
   --model "${MODEL}" \
   --quantization "${QUANT}" \
@@ -214,6 +220,7 @@ fi
   --prompt "${PROMPT}" \
   --results-root "${RESULTS_DIR}" \
   "${TOKEN_ARG[@]}" \
+  "${GRAPH_ARG[@]}" \
   --profile 2>&1 | tee "${TEMP_LOG}"
 BENCH_STATUS="${PIPESTATUS[0]}"
 set -e

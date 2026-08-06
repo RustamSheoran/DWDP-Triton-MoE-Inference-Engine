@@ -11,3 +11,4 @@ dist/
 *.pdf
 all_project.pdf
 .DS_Store
+CUDA_GRAPH_STATUS.md
