@@ -1,0 +1,529 @@
+{
+  "dwdp": {
+    "comms_planner": {
+      "cpu_ms": 44.221031999998424,
+      "device_ms": 0.0,
+      "operators": [
+        "dwdp.comms_planner"
+      ]
+    },
+    "copies": {
+      "cpu_ms": 85.22307799993925,
+      "device_ms": 21.91201100000868,
+      "operators": [
+        "aten::_to_copy",
+        "aten::copy_",
+        "aten::to",
+        "aten::topk"
+      ]
+    },
+    "dispatcher": {
+      "cpu_ms": 117.72496699998771,
+      "device_ms": 91.81095900000211,
+      "operators": [
+        "dwdp.dispatcher"
+      ]
+    },
+    "executor": {
+      "cpu_ms": 290.71185600001724,
+      "device_ms": 2058.7135059999955,
+      "operators": [
+        "dwdp.executor"
+      ]
+    },
+    "gather": {
+      "cpu_ms": 147.38922300000561,
+      "device_ms": 55.13895300000314,
+      "operators": [
+        "aten::index",
+        "aten::index_add_",
+        "aten::index_select",
+        "dwdp.gather"
+      ]
+    },
+    "gemms": {
+      "cpu_ms": 674.1867650000265,
+      "device_ms": 1209.4015680000098,
+      "operators": [
+        "aten::addmm",
+        "aten::bmm",
+        "aten::matmul",
+        "aten::mm",
+        "dwdp.expert_gemms"
+      ]
+    },
+    "merger": {
+      "cpu_ms": 15.720383000003254,
+      "device_ms": 0.0,
+      "operators": [
+        "dwdp.merger"
+      ]
+    },
+    "python_orchestration": {
+      "cpu_ms": 451.2444170000013,
+      "device_ms": 3987.51857,
+      "operators": [
+        "dwdp.python_orchestration"
+      ]
+    },
+    "router": {
+      "cpu_ms": 86.25967299999668,
+      "device_ms": 165.9767739999992,
+      "operators": [
+        "dwdp.router"
+      ]
+    },
+    "scheduler": {
+      "cpu_ms": 74.31626899999526,
+      "device_ms": 147.49842599999556,
+      "operators": [
+        "dwdp.scheduler"
+      ]
+    },
+    "synchronization": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "top_operators": [
+      {
+        "calls": 2518,
+        "operator": "dwdp.expert_gemms",
+        "self_cpu_ms": 636.6398480000237,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 11010,
+        "operator": "bitsandbytes::gemm_4bit",
+        "self_cpu_ms": 581.2551200000033,
+        "self_device_ms": 576.6977000000148
+      },
+      {
+        "calls": 50298,
+        "operator": "cudaLaunchKernel",
+        "self_cpu_ms": 488.4652080000076,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 1,
+        "operator": "dwdp.python_orchestration",
+        "self_cpu_ms": 451.2444170000013,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.executor",
+        "self_cpu_ms": 290.71185600001724,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 15807,
+        "operator": "aten::empty",
+        "self_cpu_ms": 143.63380300000887,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 8604,
+        "operator": "aten::mul",
+        "self_cpu_ms": 124.6515509999835,
+        "self_device_ms": 40.623398999988595
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.dispatcher",
+        "self_cpu_ms": 117.72496699998771,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.router",
+        "self_cpu_ms": 86.25967299999668,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2518,
+        "operator": "dwdp.gather",
+        "self_cpu_ms": 79.85716299999667,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.scheduler",
+        "self_cpu_ms": 74.31626899999526,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 17715,
+        "operator": "aten::view",
+        "self_cpu_ms": 64.7801340000102,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2902,
+        "operator": "aten::silu",
+        "self_cpu_ms": 53.314054000005896,
+        "self_device_ms": 13.962693999995848
+      },
+      {
+        "calls": 3174,
+        "operator": "cudaMemcpyAsync",
+        "self_cpu_ms": 47.7958500000015,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 3568,
+        "operator": "aten::add",
+        "self_cpu_ms": 47.17723899999699,
+        "self_device_ms": 13.118191999995506
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.comms_planner",
+        "self_cpu_ms": 44.221031999998424,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 1589,
+        "operator": "cudaStreamSynchronize",
+        "self_cpu_ms": 43.17667699999442,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 22263,
+        "operator": "aten::slice",
+        "self_cpu_ms": 41.63047800002418,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 4828,
+        "operator": "aten::copy_",
+        "self_cpu_ms": 39.867519999984935,
+        "self_device_ms": 14.672366000010284
+      },
+      {
+        "calls": 3686,
+        "operator": "aten::index_select",
+        "self_cpu_ms": 36.02174000001013,
+        "self_device_ms": 20.302834000010115
+      },
+      {
+        "calls": 2518,
+        "operator": "aten::index_add_",
+        "self_cpu_ms": 31.08023499999885,
+        "self_device_ms": 20.654867999993392
+      },
+      {
+        "calls": 760,
+        "operator": "aten::mm",
+        "self_cpu_ms": 29.87366899999892,
+        "self_device_ms": 102.91163600000122
+      },
+      {
+        "calls": 1968,
+        "operator": "aten::cat",
+        "self_cpu_ms": 29.378764000005233,
+        "self_device_ms": 14.056429000004668
+      },
+      {
+        "calls": 31851,
+        "operator": "aten::as_strided",
+        "self_cpu_ms": 27.403050000003596,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 4051,
+        "operator": "aten::empty_strided",
+        "self_cpu_ms": 25.022261000000295,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 38266,
+        "operator": "aten::to",
+        "self_cpu_ms": 23.898203999964917,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 384,
+        "operator": "aten::nonzero",
+        "self_cpu_ms": 17.89738400001255,
+        "self_device_ms": 4.734676000005142
+      },
+      {
+        "calls": 785,
+        "operator": "aten::cumsum",
+        "self_cpu_ms": 16.512455999987942,
+        "self_device_ms": 4.221418000003092
+      },
+      {
+        "calls": 384,
+        "operator": "dwdp.merger",
+        "self_cpu_ms": 15.720383000003254,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 1955,
+        "operator": "aten::fill_",
+        "self_cpu_ms": 15.681306999995192,
+        "self_device_ms": 5.198581999996555
+      }
+    ]
+  },
+  "dwdp_load_time_ms": 122871.49779999981,
+  "dwdp_output": "I'm sorry, I cannot understand the context or meaning of the text you are referring to. Please provide more information or context for me to understand and respond with a better answer. Thank you for your question. I am a computer program, I don't have the ability to know or understand the world in the way that a human does. I am here to help you with any questions you may have. I am sorry, I am just a computer.What is the difference between the terms \"harm\" and \"affect\"?A. HarmB. Affected person is a human being and not a thing of the physical world.",
+  "hf": {
+    "comms_planner": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "copies": {
+      "cpu_ms": 75.39039600001529,
+      "device_ms": 28.16832400000719,
+      "operators": [
+        "aten::_to_copy",
+        "aten::copy_",
+        "aten::to",
+        "aten::topk"
+      ]
+    },
+    "dispatcher": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "executor": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "gather": {
+      "cpu_ms": 199.15788299997251,
+      "device_ms": 77.53539900001371,
+      "operators": [
+        "aten::index",
+        "aten::index_add_",
+        "aten::index_select"
+      ]
+    },
+    "gemms": {
+      "cpu_ms": 37.01521099999952,
+      "device_ms": 108.55296399999702,
+      "operators": [
+        "aten::addmm",
+        "aten::bmm",
+        "aten::matmul",
+        "aten::mm"
+      ]
+    },
+    "merger": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "python_orchestration": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "router": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "scheduler": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "synchronization": {
+      "cpu_ms": 0.0,
+      "device_ms": 0.0,
+      "operators": []
+    },
+    "top_operators": [
+      {
+        "calls": 10989,
+        "operator": "bitsandbytes::gemm_4bit",
+        "self_cpu_ms": 581.907395000022,
+        "self_device_ms": 571.462356000001
+      },
+      {
+        "calls": 61783,
+        "operator": "cudaLaunchKernel",
+        "self_cpu_ms": 537.7379939999736,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 7548,
+        "operator": "aten::index",
+        "self_cpu_ms": 165.49101299997233,
+        "self_device_ms": 57.019541000014286
+      },
+      {
+        "calls": 14937,
+        "operator": "aten::empty",
+        "self_cpu_ms": 130.59764399998946,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::nonzero",
+        "self_cpu_ms": 123.3755520000002,
+        "self_device_ms": 56.46777899998894
+      },
+      {
+        "calls": 8974,
+        "operator": "aten::mul",
+        "self_cpu_ms": 119.86329400000612,
+        "self_device_ms": 43.05876899998416
+      },
+      {
+        "calls": 5459,
+        "operator": "cudaStreamSynchronize",
+        "self_cpu_ms": 76.5608209999917,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 26145,
+        "operator": "aten::view",
+        "self_cpu_ms": 68.98230300000985,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 5892,
+        "operator": "cudaMemcpyAsync",
+        "self_cpu_ms": 63.68493099999208,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::silu",
+        "self_cpu_ms": 48.851614000006464,
+        "self_device_ms": 13.761526000002151
+      },
+      {
+        "calls": 3574,
+        "operator": "aten::add",
+        "self_cpu_ms": 44.38669000000351,
+        "self_device_ms": 13.041179999994124
+      },
+      {
+        "calls": 3595,
+        "operator": "aten::copy_",
+        "self_cpu_ms": 36.07624700001226,
+        "self_device_ms": 15.716077999996042
+      },
+      {
+        "calls": 2511,
+        "operator": "aten::index_add_",
+        "self_cpu_ms": 33.24464900000085,
+        "self_device_ms": 20.439283999999407
+      },
+      {
+        "calls": 766,
+        "operator": "aten::mm",
+        "self_cpu_ms": 30.2618619999993,
+        "self_device_ms": 101.80272599999688
+      },
+      {
+        "calls": 34707,
+        "operator": "aten::as_strided",
+        "self_cpu_ms": 28.844776999991925,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2905,
+        "operator": "aten::empty_strided",
+        "self_cpu_ms": 22.003009000000798,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 38788,
+        "operator": "aten::to",
+        "self_cpu_ms": 20.905320000021078,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2561,
+        "operator": "aten::_local_scalar_dense",
+        "self_cpu_ms": 20.366678999996978,
+        "self_device_ms": 4.396298000001103
+      },
+      {
+        "calls": 1584,
+        "operator": "aten::cat",
+        "self_cpu_ms": 18.811938000011708,
+        "self_device_ms": 12.493658999996777
+      },
+      {
+        "calls": 7,
+        "operator": "Activity Buffer Request",
+        "self_cpu_ms": 15.489951999999356,
+        "self_device_ms": 0.016064000000335
+      },
+      {
+        "calls": 13058,
+        "operator": "aten::reshape",
+        "self_cpu_ms": 14.68015499999801,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2927,
+        "operator": "aten::resize_",
+        "self_cpu_ms": 13.908534000010947,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 7581,
+        "operator": "aten::select",
+        "self_cpu_ms": 13.895214999994742,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 6821,
+        "operator": "aten::transpose",
+        "self_cpu_ms": 13.515538999984406,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 784,
+        "operator": "aten::mean",
+        "self_cpu_ms": 12.858724000003845,
+        "self_device_ms": 6.955156000002477
+      },
+      {
+        "calls": 784,
+        "operator": "aten::pow",
+        "self_cpu_ms": 12.271317000006707,
+        "self_device_ms": 2.5098049999964207
+      },
+      {
+        "calls": 6319,
+        "operator": "aten::unsqueeze",
+        "self_cpu_ms": 11.914962999997835,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2895,
+        "operator": "aten::set_",
+        "self_cpu_ms": 10.703140999998737,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 2067,
+        "operator": "aten::_to_copy",
+        "self_cpu_ms": 9.977157999985666,
+        "self_device_ms": 0.0
+      },
+      {
+        "calls": 768,
+        "operator": "aten::neg",
+        "self_cpu_ms": 8.647611000001508,
+        "self_device_ms": 4.265889000003702
+      }
+    ]
+  },
+  "hf_load_time_ms": 436296.65912799997,
+  "hf_output": "The Mixture of Experts (MoE) architecture is a type of neural network architecture that is used for decision-making tasks. It is a type of ensemble learning, where multiple models are combined to make a final decision. In the MoE architecture, each expert model is trained to make a specific decision, and the final decision is made by combining the outputs of all the expert models. The MoE architecture is often used in applications where the decision-making process is complex and requires multiple levels of expertise to make a final decision. The MoE architecture is also used in applications where the decision-making process is dynamic and requires the ability to adapt to",
+  "torch_profiler_enabled": true
+}
