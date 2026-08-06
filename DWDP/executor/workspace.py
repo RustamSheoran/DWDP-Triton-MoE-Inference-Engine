@@ -34,6 +34,8 @@ class ExecutorWorkspace:
     _tensorlist_schedule_host: torch.Tensor | None = None
     _tensorlist_provider_ids: tuple[int, ...] | None = None
     _tensorlist_provider_positions: dict[int, int] | None = None
+    _tensorlist_provider_object_id: int | None = None
+    _tensorlist_provider_ptrs_cpu: tuple[torch.Tensor, ...] | None = None
     # Persistent tile queue storage.  These are metadata only: all addresses
     # consumed by a work item remain in TensorList and ultimately refer to
     # caller/model-owned tensors.
@@ -138,6 +140,24 @@ class ExecutorWorkspace:
             device=device,
         )
 
+    def get_temporary_output_buffer(
+        self,
+        rows: int,
+        output_size: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Return scratch for one expert's weighted output rows."""
+
+        return self._ensure_2d(
+            "temporary_outputs",
+            rows,
+            output_size,
+            dtype=dtype,
+            device=device,
+        )
+
     def get_intermediate_buffer(
         self,
         rows: int,
@@ -191,7 +211,7 @@ class ExecutorWorkspace:
             capacity = max(required, max(1, self._tensorlist_capacity * 2))
             names = tensorlist_field_names()
             num_fields = len(names)
-            
+
             self._tensorlist_device_buffer = torch.empty(
                 (num_fields, capacity), dtype=torch.int64, device=device
             )
@@ -284,7 +304,10 @@ class ExecutorWorkspace:
         return self._tensorlist_provider_positions
 
     def get_tensorlist_provider_pointers_cpu(self, provider) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        if provider.expert_ids != self._tensorlist_provider_ids:
+        if (
+            provider.expert_ids != self._tensorlist_provider_ids
+            or id(provider) != self._tensorlist_provider_object_id
+        ):
             self.get_tensorlist_provider_positions(provider.expert_ids)
             
             max_id = max(provider.expert_ids) if provider.expert_ids else 0
@@ -305,9 +328,16 @@ class ExecutorWorkspace:
                 gate_lds[expert_id] = gate.stride(0)
                 up_lds[expert_id] = up.stride(0)
                 down_lds[expert_id] = down.stride(0)
-                
-            self._tensorlist_provider_ptrs_cpu = (gate_ptrs, up_ptrs, down_ptrs, gate_lds, up_lds, down_lds)
-            
+            self._tensorlist_provider_ptrs_cpu = (
+                gate_ptrs,
+                up_ptrs,
+                down_ptrs,
+                gate_lds,
+                up_lds,
+                down_lds,
+            )
+            self._tensorlist_provider_object_id = id(provider)
+
         return self._tensorlist_provider_ptrs_cpu
 
     def ensure_persistent_queue_capacity(

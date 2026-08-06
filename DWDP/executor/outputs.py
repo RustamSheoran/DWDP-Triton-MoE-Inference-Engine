@@ -67,7 +67,7 @@ class ExecutorOutput:
     # materialize_packed_outputs=False, i.e. the downstream Merger reads
     # weighted outputs and the unweighted copy would never be consumed.
     packed_expert_outputs: torch.Tensor | None
-    weighted_expert_outputs: torch.Tensor
+    weighted_expert_outputs: torch.Tensor | None
     expert_outputs: tuple[ExpertOutput, ...]
     output_metadata: OutputMetadata
     execution_metadata: ExecutionMetadata
@@ -76,3 +76,7 @@ class ExecutorOutput:
     workspace: WorkspaceMetadata
     backend: str
     deterministic: bool
+    # Present when the executor has already accumulated weighted expert rows
+    # into token-major order, allowing the Merger to return it without an
+    # assignment-major activation buffer.
+    merged_expert_outputs: torch.Tensor | None = None

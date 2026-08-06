@@ -2,29 +2,26 @@ from __future__ import annotations
 
 import torch
 
-from ..ops import reduce_topk_assignments, restore_token_major_assignments
-
 
 def reference_merge(
     expert_major_outputs: torch.Tensor,
-    inverse_permutation: torch.Tensor,
+    packed_token_indices: torch.Tensor,
     *,
     num_tokens: int,
-    top_k: int,
-    assignment_out: torch.Tensor | None = None,
     merged_out: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Reference merge boundary for future fused reductions."""
+) -> torch.Tensor:
+    """Accumulate expert-major rows directly into token-major output."""
 
-    token_major = restore_token_major_assignments(
-        expert_major_outputs,
-        inverse_permutation,
-        out=assignment_out,
-    )
-    merged = reduce_topk_assignments(
-        token_major,
-        num_tokens=num_tokens,
-        top_k=top_k,
-        out=merged_out,
-    )
-    return token_major, merged
+    output_size = expert_major_outputs.shape[-1]
+    if merged_out is None:
+        merged = torch.zeros(
+            num_tokens,
+            output_size,
+            dtype=expert_major_outputs.dtype,
+            device=expert_major_outputs.device,
+        )
+    else:
+        merged = merged_out
+        merged.zero_()
+    merged.index_add_(0, packed_token_indices, expert_major_outputs)
+    return merged

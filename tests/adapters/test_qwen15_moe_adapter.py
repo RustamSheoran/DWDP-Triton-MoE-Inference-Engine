@@ -38,11 +38,12 @@ class FakeQwenMoeBlock(nn.Module):
 
 
 class FakeQwenModel(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, num_layers: int = 1) -> None:
         super().__init__()
         self.config = FakeConfig()
-        self.layers = nn.ModuleList([nn.Module()])
-        self.layers[0].mlp = FakeQwenMoeBlock()
+        self.layers = nn.ModuleList([nn.Module() for _ in range(num_layers)])
+        for layer in self.layers:
+            layer.mlp = FakeQwenMoeBlock()
 
     def forward(self, hidden_states: torch.Tensor):
         return self.layers[0].mlp(hidden_states)
@@ -91,6 +92,51 @@ def test_qwen_adapter_shares_gate_parameter_storage() -> None:
     assert patched.router.weight.data_ptr() == original_gate.weight.data_ptr()
 
 
+def test_qwen_adapter_shares_one_workspace_across_moe_layers() -> None:
+    model = FakeQwenModel(num_layers=3)
+    adapter = Qwen15MoEAdapter(model=model, config=RuntimeConfig())
+
+    adapter.patch_model()
+
+    contexts = [layer.mlp.context for layer in model.layers]
+    assert contexts[0] is contexts[1] is contexts[2]
+
+
+def test_shared_workspace_does_not_alias_sequential_layer_outputs() -> None:
+    model = FakeQwenModel(num_layers=2)
+    adapter = Qwen15MoEAdapter(model=model, config=RuntimeConfig())
+    adapter.patch_model()
+    hidden_states = torch.tensor(
+        [[[2.0, 1.0, 0.0, 0.0], [1.0, 4.0, 0.0, 0.0]]]
+    )
+
+    with torch.inference_mode():
+        output = hidden_states
+        for layer in model.layers:
+            output, _ = layer.mlp(output)
+
+    expected = torch.tensor(
+        [[[8.0, 4.0, 0.0, 0.0], [9.0, 36.0, 0.0, 0.0]]]
+    )
+    assert torch.equal(output, expected)
+
+
+def test_patched_pytorch_block_avoids_assignment_major_output_buffers() -> None:
+    model = FakeQwenModel()
+    adapter = Qwen15MoEAdapter(model=model, config=RuntimeConfig())
+    adapter.patch_model()
+    patched = model.layers[0].mlp
+
+    with torch.inference_mode():
+        output, _ = patched(torch.randn(1, 8, 4))
+
+    assert output.shape == (1, 8, 4)
+    assert patched.context.workspaces.executor.packed_expert_outputs is None
+    assert patched.context.workspaces.executor.weighted_expert_outputs is None
+    assert not hasattr(patched.context.workspaces.executor, "merged_expert_outputs")
+    assert patched.context.workspaces.merger.estimated_bytes() == 0
+
+
 def test_patched_qwen_block_executes_dwdp_pipeline() -> None:
     model = FakeQwenModel()
     adapter = Qwen15MoEAdapter(model=model, config=RuntimeConfig())
@@ -102,6 +148,29 @@ def test_patched_qwen_block_executes_dwdp_pipeline() -> None:
     expected = torch.tensor([[[4.0, 2.0, 0.0, 0.0], [3.0, 12.0, 0.0, 0.0]]])
     assert torch.allclose(output, expected)
     assert router_logits.shape == (1, 2, 2)
+
+
+def test_shared_expert_is_combined_after_routed_output() -> None:
+    model = FakeQwenModel()
+    block = model.layers[0].mlp
+    block.shared_expert = nn.Linear(4, 4, bias=False)
+    block.shared_expert_gate = nn.Linear(4, 1, bias=False)
+    with torch.no_grad():
+        block.shared_expert.weight.copy_(torch.eye(4))
+        block.shared_expert_gate.weight.zero_()
+    adapter = Qwen15MoEAdapter(model=model, config=RuntimeConfig())
+    adapter.patch_model()
+    hidden_states = torch.tensor(
+        [[[2.0, 1.0, 0.0, 0.0], [1.0, 4.0, 0.0, 0.0]]]
+    )
+
+    with torch.inference_mode():
+        output, _ = model(hidden_states)
+
+    expected = torch.tensor(
+        [[[5.0, 2.5, 0.0, 0.0], [3.5, 14.0, 0.0, 0.0]]]
+    )
+    assert torch.equal(output, expected)
 
 
 def test_huggingface_adapter_auto_patches_supported_model() -> None:

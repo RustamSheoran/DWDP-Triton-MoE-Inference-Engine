@@ -50,9 +50,10 @@ class DWDPRuntime(nn.Module):
         self.adapter = adapter
         self.context = RuntimeContext.from_config(self.config)
         self.graph_runner = CUDAGraphRunner(self)
-        self.paged_kv_manager = (
-            PagedKVCacheManager(num_blocks=1024) if torch.cuda.is_available() else None
-        )
+        # Attention/KV ownership remains with the caller or Hugging Face model.
+        # The previous placeholder eagerly reserved a hard-coded 8 GiB cache
+        # even though no runtime path consumed it.
+        self.paged_kv_manager: PagedKVCacheManager | None = None
 
         # Enable FlashAttention SDPA & TF32 Tensor Cores
         if torch.cuda.is_available():

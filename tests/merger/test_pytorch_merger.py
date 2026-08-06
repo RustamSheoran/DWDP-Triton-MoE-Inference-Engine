@@ -117,17 +117,18 @@ def test_merger_restores_batch_dimensions() -> None:
     assert output.metadata.token_shape == (1, 2)
 
 
-def test_workspace_reuses_buffers() -> None:
+def test_outputs_do_not_alias_reusable_workspace() -> None:
     merger = PyTorchMerger(MergerConfig())
     workspace = MergerWorkspace()
 
     first = merger(make_executor_output(), workspace=workspace)
-    first_ptr = first.hidden_states.data_ptr()
+    snapshot = first.hidden_states.clone()
     second = merger(make_executor_output(), workspace=workspace)
 
-    assert second.hidden_states.data_ptr() == first_ptr
-    assert second.workspace.used_workspace
-    assert workspace.estimated_bytes() > 0
+    assert torch.equal(first.hidden_states, snapshot)
+    assert second.hidden_states.data_ptr() != first.hidden_states.data_ptr()
+    assert not second.workspace.used_workspace
+    assert workspace.estimated_bytes() == 0
 
 
 def test_workspace_can_be_disabled() -> None:

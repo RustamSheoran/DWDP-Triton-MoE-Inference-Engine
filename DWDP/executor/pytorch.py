@@ -55,6 +55,7 @@ class PyTorchExecutor(BaseExecutor):
         output_size: int | None = None
         packed_outputs: torch.Tensor | None = None
         weighted_outputs: torch.Tensor | None = None
+        merged_outputs: torch.Tensor | None = None
 
         expert_records: list[ExpertOutput] = []
         skipped_experts = 0
@@ -93,8 +94,9 @@ class PyTorchExecutor(BaseExecutor):
             expert_output = self._execute_expert(expert_id, gathered)
             if output_size is None:
                 output_size = int(expert_output.shape[-1])
-                packed_outputs, weighted_outputs = self._allocate_outputs(
+                packed_outputs, weighted_outputs, merged_outputs = self._allocate_outputs(
                     num_assignments,
+                    flat_hidden_states.shape[0],
                     output_size,
                     dtype=output_dtype,
                     device=device,
@@ -122,14 +124,30 @@ class PyTorchExecutor(BaseExecutor):
                 # also multiplies at the expert's native precision whenever the
                 # dtypes differ.
                 weight_source = expert_output
-            # Write weighted values directly to the final packed buffer.  The
-            # previous path allocated a full temporary tensor and then copied
-            # it into this exact slice for every active expert.
-            torch.mul(
-                weight_source,
-                routing_weights.unsqueeze(-1),
-                out=weighted_outputs[start:end],
-            )
+            if merged_outputs is not None:
+                weighted_slice = self._get_temporary_outputs(
+                    count,
+                    output_size,
+                    dtype=output_dtype,
+                    device=device,
+                    workspace=active_workspace,
+                )
+                weights_column = routing_weights.unsqueeze(-1)
+                if torch.is_grad_enabled() and weight_source.requires_grad:
+                    merged_outputs.index_add_(
+                        0, token_indices, weight_source * weights_column
+                    )
+                else:
+                    torch.mul(weight_source, weights_column, out=weighted_slice)
+                    merged_outputs.index_add_(0, token_indices, weighted_slice)
+            else:
+                assert weighted_outputs is not None
+                # Write weighted values directly to the final packed buffer.
+                weights_column = routing_weights.unsqueeze(-1)
+                if torch.is_grad_enabled() and weight_source.requires_grad:
+                    weighted_outputs[start:end].copy_(weight_source * weights_column)
+                else:
+                    torch.mul(weight_source, weights_column, out=weighted_outputs[start:end])
             expert_records.append(
                 ExpertOutput(
                     expert_id=expert_id,
@@ -143,14 +161,18 @@ class PyTorchExecutor(BaseExecutor):
 
         if output_size is None:
             output_size = hidden_size
-            packed_outputs, weighted_outputs = self._allocate_outputs(
+            packed_outputs, weighted_outputs, merged_outputs = self._allocate_outputs(
                 num_assignments,
+                flat_hidden_states.shape[0],
                 output_size,
                 dtype=output_dtype,
                 device=device,
                 workspace=active_workspace,
             )
-        assert weighted_outputs is not None
+        if self.config.accumulate_token_outputs:
+            assert merged_outputs is not None
+        else:
+            assert weighted_outputs is not None
 
         output_metadata = OutputMetadata(
             packed_token_indices=dispatch_plan.assignments.packed_token_indices,
@@ -198,6 +220,7 @@ class PyTorchExecutor(BaseExecutor):
             workspace=workspace_metadata,
             backend=self.config.backend,
             deterministic=self.config.deterministic,
+            merged_expert_outputs=merged_outputs,
         )
 
     @staticmethod
@@ -241,13 +264,50 @@ class PyTorchExecutor(BaseExecutor):
     def _allocate_outputs(
         self,
         num_assignments: int,
+        num_tokens: int,
         output_size: int,
         *,
         dtype: torch.dtype,
         device: torch.device,
         workspace: ExecutorWorkspace | None,
-    ) -> tuple[torch.Tensor | None, torch.Tensor]:
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
         materialize_packed = self.config.materialize_packed_outputs
+        if self.config.accumulate_token_outputs:
+            if workspace is None:
+                packed = (
+                    torch.empty(
+                        num_assignments,
+                        output_size,
+                        dtype=dtype,
+                        device=device,
+                    )
+                    if materialize_packed
+                    else None
+                )
+                merged = torch.zeros(
+                    num_tokens, output_size, dtype=dtype, device=device
+                )
+            else:
+                packed = (
+                    workspace._ensure_2d(
+                        "packed_expert_outputs",
+                        num_assignments,
+                        output_size,
+                        dtype=dtype,
+                        device=device,
+                    )
+                    if materialize_packed
+                    else None
+                )
+                # The token-major accumulator becomes the layer output and
+                # must outlive this executor call. A shared workspace is
+                # scratch owned by the runtime and is reused by the next MoE
+                # layer, so returning a workspace-backed accumulator would
+                # overwrite the previous layer's input on the next forward.
+                merged = torch.zeros(
+                    num_tokens, output_size, dtype=dtype, device=device
+                )
+            return packed, None, merged
         if workspace is None:
             packed = (
                 torch.empty(num_assignments, output_size, dtype=dtype, device=device)
@@ -257,13 +317,33 @@ class PyTorchExecutor(BaseExecutor):
             return (
                 packed,
                 torch.empty(num_assignments, output_size, dtype=dtype, device=device),
+                None,
             )
-        return workspace.get_output_buffers(
+        packed, weighted = workspace.get_output_buffers(
             num_assignments,
             output_size,
             dtype=dtype,
             device=device,
             materialize_packed=materialize_packed,
+        )
+        return packed, weighted, None
+
+    @staticmethod
+    def _get_temporary_outputs(
+        rows: int,
+        output_size: int,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+        workspace: ExecutorWorkspace | None,
+    ) -> torch.Tensor:
+        if workspace is None:
+            return torch.empty(rows, output_size, dtype=dtype, device=device)
+        return workspace.get_temporary_output_buffer(
+            rows,
+            output_size,
+            dtype=dtype,
+            device=device,
         )
 
     def _gather_inputs(

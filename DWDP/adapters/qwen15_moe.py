@@ -79,10 +79,6 @@ class DWDPMoEBlock(nn.Module):
         # Set by enable_cuda_graphs(); None means eager execution.
         self._graph_runner = None
 
-        self._shared_stream: torch.cuda.Stream | None = None
-        if self.shared_expert is not None and torch.cuda.is_available():
-            self._shared_stream = torch.cuda.Stream()
-
         # The reference "counting_scatter" dispatch computes destination slots
         # in a Python loop over every token-expert assignment on the host. That
         # is the largest single source of decode overhead and it blocks CUDA
@@ -143,6 +139,7 @@ class DWDPMoEBlock(nn.Module):
                 # Skipping it saves a [num_tokens * top_k, hidden] buffer per
                 # forward.
                 materialize_packed_outputs=False,
+                accumulate_token_outputs=config.executor_backend == "pytorch",
             ),
             spec.experts,
         )
@@ -302,23 +299,30 @@ class DWDPMoEBlock(nn.Module):
         )
         return True
 
+    def _add_shared_expert(
+        self, routed_output: torch.Tensor, hidden_states: torch.Tensor
+    ) -> torch.Tensor:
+        """Run the shared expert sequentially and combine its output."""
+
+        if self.shared_expert is None:
+            return routed_output
+        shared_output = self.shared_expert(hidden_states)
+        if self.shared_expert_gate is not None:
+            gate = torch.sigmoid(self.shared_expert_gate(hidden_states))
+            if torch.is_grad_enabled():
+                shared_output = gate * shared_output
+            else:
+                shared_output.mul_(gate)
+        if torch.is_grad_enabled():
+            return routed_output + shared_output
+        routed_output.add_(shared_output)
+        return routed_output
+
     def forward(self, hidden_states: torch.Tensor, *args, **kwargs):
         """Execute the MoE block through DWDP while preserving HF signature."""
 
         del args, kwargs
         workspaces = self.context.workspaces
-        # Stream-Overlapped Shared Expert Execution
-        shared_output = None
-        if self.shared_expert is not None and self._shared_stream is not None:
-            self._shared_stream.wait_stream(torch.cuda.current_stream())
-            with torch.cuda.stream(self._shared_stream):
-                shared_output = self.shared_expert(hidden_states)
-                if self.shared_expert_gate is not None:
-                    shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
-        elif self.shared_expert is not None:
-            shared_output = self.shared_expert(hidden_states)
-            if self.shared_expert_gate is not None:
-                shared_output = torch.sigmoid(self.shared_expert_gate(hidden_states)) * shared_output
 
         # Hybrid executor: decode-EP below the threshold, prefill-DWDP above it.
         if (
@@ -329,10 +333,7 @@ class DWDPMoEBlock(nn.Module):
             and dist.is_initialized()
         ):
             output, router_output = self._ep_decode_forward(hidden_states)
-            if shared_output is not None:
-                if self._shared_stream is not None:
-                    torch.cuda.current_stream().wait_stream(self._shared_stream)
-                output = output + shared_output
+            output = self._add_shared_expert(output, hidden_states)
             if self.returns_router_logits:
                 return output, router_output.router_logits
             return output
@@ -423,12 +424,7 @@ class DWDPMoEBlock(nn.Module):
                     workspace=workspaces.merger if workspaces is not None else None,
                 )
             output_hidden = merger_output.hidden_states
-        output = output_hidden
-
-        if shared_output is not None:
-            if self._shared_stream is not None:
-                torch.cuda.current_stream().wait_stream(self._shared_stream)
-            output = output + shared_output
+        output = self._add_shared_expert(output_hidden, hidden_states)
 
         if self.returns_router_logits:
             return output, router_logits

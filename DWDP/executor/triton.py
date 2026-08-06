@@ -142,7 +142,9 @@ class TritonExpertExecutor(PyTorchExecutor):
             self.weight_provider.hidden_size,
             dtype=output_dtype,
             device=hidden_states.device,
+            materialize_packed=self.config.materialize_packed_outputs,
         )
+        packed_storage = packed_outputs if packed_outputs is not None else weighted_outputs
         intermediate = active_workspace.get_intermediate_buffer(
             assignments,
             self.weight_provider.intermediate_size,
@@ -155,7 +157,7 @@ class TritonExpertExecutor(PyTorchExecutor):
             execution_plan,
             active_workspace,
             self.weight_provider,
-            packed_outputs,
+            packed_storage,
             weighted_outputs,
             intermediate,
         )

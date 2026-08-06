@@ -142,8 +142,10 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
             self.weight_provider.hidden_size,
             dtype=output_dtype,
             device=hidden_states.device,
+            materialize_packed=self.config.materialize_packed_outputs,
         )
-        packed_outputs.zero_()
+        packed_storage = packed_outputs if packed_outputs is not None else weighted_outputs
+        packed_storage.zero_()
         weighted_outputs.zero_()
 
         # One scale per (token, 128-channel block); recomputed each forward
@@ -201,7 +203,7 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
             )
 
             weights = packed_routing_weights[start:end]
-            packed_outputs[start:end] = expert_out
+            packed_storage[start:end] = expert_out
             weighted_outputs[start:end] = expert_out * weights.unsqueeze(-1).to(
                 expert_out.dtype
             )

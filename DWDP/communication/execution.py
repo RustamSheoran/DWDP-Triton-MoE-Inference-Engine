@@ -114,16 +114,10 @@ class ExecutionCommunicationEngine(nn.Module):
             for parameter in module.parameters(recurse=True)
             if parameter.device.type == "cuda"
         )
-        # Register with the C++ engine if available.
-        if pointers:
-            device = next(
-                p.device
-                for p in module.parameters(recurse=True)
-                if p.device.type == "cuda"
-            )
-            if self._ensure_native_engine(device):
-                self._register_expert_native(expert_id, module)
-
+        # Local experts execute through their original module storage. Native
+        # staging is initialized explicitly by distributed bootstrap, where
+        # remote IPC experts actually require it. Initializing it here reserved
+        # two 16 MiB CUDA buffers per MoE layer on single-GPU inference.
         pointer = ExpertPointer(module=module, device_pointers=pointers)
         self._expert_pointers[expert_id] = pointer
         return pointer

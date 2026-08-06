@@ -22,6 +22,10 @@ class ExecutorConfig:
     # full assignment-scaled buffer per forward for nothing. Set False when the
     # downstream merger consumes weighted outputs.
     materialize_packed_outputs: bool = True
+    # The Hugging Face adapter can accumulate each weighted expert batch
+    # directly into one token-major output. This avoids retaining a full
+    # [num_tokens * top_k, hidden] weighted buffer between Executor and Merger.
+    accumulate_token_outputs: bool = False
     allow_empty_experts: bool = True
     enable_distributed_placeholders: bool = True
     enable_async_placeholders: bool = True

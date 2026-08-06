@@ -31,7 +31,15 @@ class PyTorchMerger(BaseMerger):
 
         metadata = executor_output.output_metadata
         used_weighted = False
-        if self.config.apply_routing_weights:
+        premerged = executor_output.merged_expert_outputs
+        if premerged is not None:
+            if self.config.apply_routing_weights:
+                raise ValueError(
+                    "apply_routing_weights=True is incompatible with executor-side accumulation"
+                )
+            source = None
+            used_weighted = True
+        elif self.config.apply_routing_weights:
             source = executor_output.packed_expert_outputs
             if source is None:
                 raise ValueError(
@@ -42,35 +50,23 @@ class PyTorchMerger(BaseMerger):
             source = source * metadata.packed_routing_weights.unsqueeze(-1)
         else:
             source = executor_output.weighted_expert_outputs
+            if source is None:
+                raise ValueError("executor did not provide weighted expert outputs")
             used_weighted = True
 
         num_tokens = num_tokens_from_shape(metadata.token_shape)
-        output_size = source.shape[-1]
-        active_workspace = workspace if self.config.enable_workspace else None
-        assignment_out = None
-        merged_out = None
-        if active_workspace is not None:
-            assignment_out = active_workspace.get_assignment_buffer(
-                source.shape[0],
-                output_size,
-                dtype=source.dtype,
-                device=source.device,
-            )
-            merged_out = active_workspace.get_merged_buffer(
-                num_tokens,
-                output_size,
-                dtype=source.dtype,
-                device=source.device,
-            )
-
-        _, merged_flat = reference_merge(
-            source,
-            metadata.inverse_permutation,
-            num_tokens=num_tokens,
-            top_k=metadata.top_k,
-            assignment_out=assignment_out,
-            merged_out=merged_out,
+        output_size = (
+            premerged.shape[-1] if premerged is not None else source.shape[-1]
         )
+
+        if premerged is not None:
+            merged_flat = premerged
+        else:
+            merged_flat = reference_merge(
+                source,
+                metadata.packed_token_indices,
+                num_tokens=num_tokens,
+            )
         hidden_states = merged_flat.reshape(
             *metadata.token_shape, output_size
         ).contiguous()
@@ -84,17 +80,15 @@ class PyTorchMerger(BaseMerger):
         )
         statistics = MergeStatistics(
             num_tokens=num_tokens,
-            num_assignments=source.shape[0],
+            num_assignments=metadata.packed_token_indices.numel(),
             top_k=metadata.top_k,
             output_size=output_size,
             used_weighted_executor_outputs=used_weighted,
             backend=self.config.backend,
         )
         workspace_metadata = WorkspaceMetadata(
-            used_workspace=active_workspace is not None,
-            workspace_bytes=active_workspace.estimated_bytes()
-            if active_workspace is not None
-            else 0,
+            used_workspace=False,
+            workspace_bytes=0,
         )
         return MergerOutput(
             hidden_states=hidden_states,

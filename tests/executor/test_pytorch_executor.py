@@ -23,6 +23,7 @@ from DWDP.executor import (  # noqa: E402
     build_executor,
 )
 from DWDP.executor.experts import ExpertRegistry  # noqa: E402
+from DWDP.merger import MergerConfig, PyTorchMerger  # noqa: E402
 from DWDP.scheduler import (  # noqa: E402
     DependencyMetadata as SchedulerDependencyMetadata,
     ExecutionPlan,
@@ -259,6 +260,100 @@ def test_workspace_reuses_output_buffers() -> None:
     assert second.weighted_expert_outputs.data_ptr() == first_ptr
     assert second.workspace.used_workspace
     assert workspace.estimated_bytes() > 0
+
+
+def test_executor_can_accumulate_directly_to_token_major_output() -> None:
+    executor = PyTorchExecutor(
+        ExecutorConfig(
+            materialize_packed_outputs=False,
+            accumulate_token_outputs=True,
+        ),
+        ExpertRegistry({0: ScaleExpert(2.0), 1: ScaleExpert(3.0)}),
+    )
+
+    output = executor(
+        torch.tensor(
+            [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
+        ),
+        make_dispatch_plan(),
+        make_execution_plan(),
+        make_communication_plan(),
+        workspace=ExecutorWorkspace(),
+    )
+
+    assert output.packed_expert_outputs is None
+    assert output.weighted_expert_outputs is None
+    assert torch.allclose(
+        output.merged_expert_outputs,
+        torch.tensor(
+            [[1.0, 2.0], [2.25, 3.0], [10.0, 12.0], [15.75, 18.0]]
+        ),
+    )
+
+
+def test_direct_accumulation_matches_assignment_path_for_topk() -> None:
+    dispatch = make_dispatch_plan()
+    dispatch.assignments = ExpertAssignments(
+        expert_ids=torch.tensor([0, 0, 0, 0, 1, 1, 1, 1]),
+        packed_token_indices=torch.tensor([0, 1, 2, 3, 0, 1, 2, 3]),
+        packed_routing_weights=torch.tensor(
+            [0.2, 0.4, 0.6, 0.8, 0.8, 0.6, 0.4, 0.2]
+        ),
+    )
+    dispatch.metadata.num_assignments = 8
+    dispatch.metadata.top_k = 2
+    dispatch.metadata.expert_counts = torch.tensor([4, 4])
+    dispatch.metadata.expert_offsets = torch.tensor([0, 4, 8])
+    dispatch.metadata.token_permutation = torch.arange(8)
+    dispatch.metadata.inverse_permutation = torch.arange(8)
+    dispatch.metadata.destination_positions = torch.arange(8)
+
+    execution = make_execution_plan()
+    execution.expert_starts = torch.tensor([0, 4])
+    execution.expert_ends = torch.tensor([4, 8])
+    execution.expert_counts = torch.tensor([4, 4])
+    execution.statistics.num_assignments = 8
+    execution.statistics.max_tokens_per_expert = 4
+    execution.statistics.min_tokens_per_active_expert = 4
+
+    hidden_states = torch.tensor(
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
+    )
+    experts = {0: ScaleExpert(2.0), 1: ScaleExpert(3.0)}
+    legacy = PyTorchExecutor(
+        ExecutorConfig(materialize_packed_outputs=False),
+        ExpertRegistry(experts),
+    )
+    direct = PyTorchExecutor(
+        ExecutorConfig(
+            materialize_packed_outputs=False,
+            accumulate_token_outputs=True,
+        ),
+        ExpertRegistry(experts),
+    )
+
+    legacy_output = legacy(
+        hidden_states,
+        dispatch,
+        execution,
+        make_communication_plan(),
+        workspace=ExecutorWorkspace(),
+    )
+    direct_output = direct(
+        hidden_states,
+        dispatch,
+        execution,
+        make_communication_plan(),
+        workspace=ExecutorWorkspace(),
+    )
+    merger = PyTorchMerger(MergerConfig())
+
+    assert torch.allclose(
+        merger(direct_output).hidden_states,
+        merger(legacy_output).hidden_states,
+        rtol=1e-5,
+        atol=1e-6,
+    )
 
 
 def test_workspace_can_be_disabled() -> None:
