@@ -125,19 +125,26 @@ class PyTorchExecutor(BaseExecutor):
                 # dtypes differ.
                 weight_source = expert_output
             if merged_outputs is not None:
-                weighted_slice = self._get_temporary_outputs(
-                    count,
-                    output_size,
-                    dtype=output_dtype,
-                    device=device,
-                    workspace=active_workspace,
-                )
                 weights_column = routing_weights.unsqueeze(-1)
                 if torch.is_grad_enabled() and weight_source.requires_grad:
                     merged_outputs.index_add_(
                         0, token_indices, weight_source * weights_column
                     )
+                elif packed_outputs is None and weight_source.dtype == output_dtype:
+                    # The expert result is forward-local and no unweighted
+                    # consumer exists. Weighting it in place removes the
+                    # max-active-expert scratch buffer and one full activation
+                    # write/read pair before token-major accumulation.
+                    weight_source.mul_(weights_column)
+                    merged_outputs.index_add_(0, token_indices, weight_source)
                 else:
+                    weighted_slice = self._get_temporary_outputs(
+                        count,
+                        output_size,
+                        dtype=output_dtype,
+                        device=device,
+                        workspace=active_workspace,
+                    )
                     torch.mul(weight_source, weights_column, out=weighted_slice)
                     merged_outputs.index_add_(0, token_indices, weighted_slice)
             else:
@@ -300,10 +307,9 @@ class PyTorchExecutor(BaseExecutor):
                     else None
                 )
                 # The token-major accumulator becomes the layer output and
-                # must outlive this executor call. A shared workspace is
-                # scratch owned by the runtime and is reused by the next MoE
-                # layer, so returning a workspace-backed accumulator would
-                # overwrite the previous layer's input on the next forward.
+                # must remain owned by this forward. Reusing workspace storage
+                # here would let later layers or forwards overwrite a tensor
+                # that the caller may still hold.
                 merged = torch.zeros(
                     num_tokens, output_size, dtype=dtype, device=device
                 )

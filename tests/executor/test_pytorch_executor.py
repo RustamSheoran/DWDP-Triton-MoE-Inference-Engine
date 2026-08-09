@@ -356,6 +356,38 @@ def test_direct_accumulation_matches_assignment_path_for_topk() -> None:
     )
 
 
+def test_direct_accumulation_outputs_survive_later_forwards() -> None:
+    executor = PyTorchExecutor(
+        ExecutorConfig(
+            materialize_packed_outputs=False,
+            accumulate_token_outputs=True,
+        ),
+        ExpertRegistry({0: ScaleExpert(2.0), 1: ScaleExpert(3.0)}),
+    )
+    workspace = ExecutorWorkspace()
+    hidden_states = torch.tensor(
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
+    )
+
+    first = executor(
+        hidden_states,
+        make_dispatch_plan(),
+        make_execution_plan(),
+        make_communication_plan(),
+        workspace=workspace,
+    )
+    snapshot = first.merged_expert_outputs.clone()
+    executor(
+        hidden_states * 2,
+        make_dispatch_plan(),
+        make_execution_plan(),
+        make_communication_plan(),
+        workspace=workspace,
+    )
+
+    assert torch.equal(first.merged_expert_outputs, snapshot)
+
+
 def test_workspace_can_be_disabled() -> None:
     executor = PyTorchExecutor(
         ExecutorConfig(enable_workspace=False),

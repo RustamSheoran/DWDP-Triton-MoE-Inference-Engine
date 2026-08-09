@@ -299,20 +299,50 @@ class DWDPMoEBlock(nn.Module):
         )
         return True
 
+    def _launch_shared_expert(
+        self, hidden_states: torch.Tensor
+    ) -> torch.Tensor | None:
+        """Start shared-expert work before routed execution when CUDA allows."""
+
+        if self.shared_expert is None:
+            return None
+        streams = self.context.streams
+        if streams is None or not streams.initialized:
+            return None
+        shared_stream = streams.compute
+        shared_stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(shared_stream):
+            shared_output = self.shared_expert(hidden_states)
+            if self.shared_expert_gate is not None:
+                gate = torch.sigmoid(self.shared_expert_gate(hidden_states))
+                if torch.is_grad_enabled():
+                    shared_output = gate * shared_output
+                else:
+                    shared_output.mul_(gate)
+        return shared_output
+
     def _add_shared_expert(
-        self, routed_output: torch.Tensor, hidden_states: torch.Tensor
+        self,
+        routed_output: torch.Tensor,
+        hidden_states: torch.Tensor,
+        shared_output: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Run the shared expert sequentially and combine its output."""
+        """Combine shared-expert output after routed execution completes."""
 
         if self.shared_expert is None:
             return routed_output
-        shared_output = self.shared_expert(hidden_states)
-        if self.shared_expert_gate is not None:
-            gate = torch.sigmoid(self.shared_expert_gate(hidden_states))
-            if torch.is_grad_enabled():
-                shared_output = gate * shared_output
-            else:
-                shared_output.mul_(gate)
+        if shared_output is None:
+            shared_output = self.shared_expert(hidden_states)
+            if self.shared_expert_gate is not None:
+                gate = torch.sigmoid(self.shared_expert_gate(hidden_states))
+                if torch.is_grad_enabled():
+                    shared_output = gate * shared_output
+                else:
+                    shared_output.mul_(gate)
+        else:
+            streams = self.context.streams
+            if streams is not None and streams.initialized:
+                torch.cuda.current_stream().wait_stream(streams.compute)
         if torch.is_grad_enabled():
             return routed_output + shared_output
         routed_output.add_(shared_output)
@@ -322,7 +352,9 @@ class DWDPMoEBlock(nn.Module):
         """Execute the MoE block through DWDP while preserving HF signature."""
 
         del args, kwargs
+        self.context.prepare_for(hidden_states.device)
         workspaces = self.context.workspaces
+        shared_output = self._launch_shared_expert(hidden_states)
 
         # Hybrid executor: decode-EP below the threshold, prefill-DWDP above it.
         if (
@@ -333,7 +365,7 @@ class DWDPMoEBlock(nn.Module):
             and dist.is_initialized()
         ):
             output, router_output = self._ep_decode_forward(hidden_states)
-            output = self._add_shared_expert(output, hidden_states)
+            output = self._add_shared_expert(output, hidden_states, shared_output)
             if self.returns_router_logits:
                 return output, router_output.router_logits
             return output
@@ -424,7 +456,7 @@ class DWDPMoEBlock(nn.Module):
                     workspace=workspaces.merger if workspaces is not None else None,
                 )
             output_hidden = merger_output.hidden_states
-        output = self._add_shared_expert(output_hidden, hidden_states)
+        output = self._add_shared_expert(output_hidden, hidden_states, shared_output)
 
         if self.returns_router_logits:
             return output, router_logits
