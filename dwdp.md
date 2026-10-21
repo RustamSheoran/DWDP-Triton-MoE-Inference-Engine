@@ -194,7 +194,7 @@ In raw CUDA C++, an engineer must manually manage thread indexing, warp shuffles
 * **Core Video Resources:**
   * 📺 **[GPU MODE - Lecture 14: Practitioner's Guide to Triton](https://www.youtube.com/watch?v=DdTsX6DQk24)** *(The definitive engineering introduction to writing high-performance Triton kernels).*
   * 📺 **[GPU MODE - Lecture 28: Liger Kernel - Efficient Triton Kernels for LLM](https://www.youtube.com/watch?v=gWble4FreV4)** *(Deep dive into fusing activations, CrossEntropy, and GEMM for LLM workloads).*
-* **Triton Kernel 1: Fused Softmax:** Load a row of logits into SRAM, subtract row max, compute exponential, sum, divide, and store back—all in a single kernel pass without saving intermediate exponentials to global VRAM.
+* **Triton Kernel 1: Fused Softmax:** Load a row of logits into SRAM, subtract row max, compute exponential, sum, divide, and store back, all in a single kernel pass without saving intermediate exponentials to global VRAM.
 * **Triton Kernel 2: Tiled Matrix Multiplication (GEMM):** Tiling along $M, N, K$ dimensions with block accumulation in registers using `tl.dot`.
 
 ---
@@ -262,14 +262,14 @@ DWDP-Triton-MoE-Inference-Engine/
 * **Step 1 (Tile Histogram Kernel):** Partition $N = T \times K$ tokens into tiles of 256. Each Triton program updates its *private* row in a tile-counts scratch matrix via `tl.atomic_add`. Zero SM contention!
 * **Step 2 (Exclusive Scan):** Compute prefix sums across tiles to obtain global expert offsets and local reservations.
 * **Step 3 (Stable Tile Pack):** Sort composite keys:
-  $$\text{key} = \text{expert\_id} \times \text{tile\_size} + \text{source\_lane}$$
-  Because `source_lane` is unique, sorting guarantees deterministic preservation of token order within each expert bucket. Scatter tokens into expert-major output buffers.
+  $$\text{key} = \text{expert} \times \text{tile} + \text{lane}$$
+  where `key = expert_id * tile_size + source_lane`. Because `source_lane` is unique, sorting guarantees deterministic preservation of token order within each expert bucket. Scatter tokens into expert-major output buffers.
 
 ---
 
 ### 📍 Milestone 3: The Scheduler (`DWDP/scheduler`)
 * **File to Build:** [`DWDP/scheduler/policies/round_robin.py`](file:///home/rustam/Projects/DWDP-Triton-MoE-Inference-Engine/DWDP/scheduler/policies/round_robin.py), [`DWDP/scheduler/utils.py`](file:///home/rustam/Projects/DWDP-Triton-MoE-Inference-Engine/DWDP/scheduler/utils.py)
-* **Step 1:** Identify active experts: $\text{active} = \{ e \mid \text{expert\_counts}[e] > 0 \}$.
+* **Step 1:** Identify active experts: $\text{active} = \{ e \mid \text{counts}[e] > 0 \}$ where `counts` represents `expert_counts`.
 * **Step 2 (The 384 CUDA Sync Stall Fix):** Never call `.item()` in loops over experts! Convert metadata tensors to CPU lists using a single bulk `.tolist()` call before iterating.
 * **Step 3:** Assign slice bounds $[\text{starts}[i], \text{ends}[i])$ and stream IDs modulo `stream_count`.
 
@@ -375,8 +375,8 @@ DWDP-Triton-MoE-Inference-Engine/
 ### Q5: "How does your Triton Dispatcher avoid global sorting or atomic contention?"
 * **Answer:**
   "In `DWDP/dispatcher/kernels/triton.py`, we partition tokens into 256-token tiles. In Stage 1, each Triton program accumulates expert counts into its own **private row** of a scratch matrix. Because no two programs write to the same row, atomics are tile-local with zero SM-to-SM cache-line bouncing. An exclusive scan computes bucket reservations. In Stage 2, each tile sorts a 32-bit composite key:
-  $$\text{key} = \text{expert\_id} \times \text{tile\_size} + \text{source\_lane}$$
-  Because `source_lane` is unique, local tile sorting groups by expert while deterministically preserving original token sequence order, scattering tokens directly to destination buffers with strictly $O(N)$ memory traffic."
+  $$\text{key} = \text{expert} \times \text{tile} + \text{lane}$$
+  where `key = expert_id * tile_size + source_lane`. Because `source_lane` is unique, local tile sorting groups by expert while deterministically preserving original token sequence order, scattering tokens directly to destination buffers with strictly $O(N)$ memory traffic."
 
 ---
 
@@ -698,9 +698,9 @@ PYBIND11_MODULE(dwdp_communication_ext, m) {
 * **The Failure Mode:** If your GPU grid launches thread blocks for every expert uniformly:
   $$\text{Grid} = \left(\left\lceil \frac{T}{B} \right\rceil, E\right)$$
   SMs allocated to empty experts perform no compute but consume thread block scheduler slots. Meanwhile, SMs allocated to the popular expert become bottlenecked, stalling the entire GPU (**The Straggler Effect**).
-* **DWDP Solution (Dynamic Grid Bounding):** In [`DWDP/executor/kernels/fused_moe.py`](file:///home/rustam/Projects/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/fused_moe.py), the grid's $M$-dimension is sized dynamically to $\text{expert\_counts.max()}$:
-  $$\text{Grid} = \left(\left\lceil \frac{\max(\text{tokens\_per\_expert})}{BLOCK\_SIZE\_M} \right\rceil, \text{num\_experts}\right)$$
-  Any thread block where $\text{pid} \times BLOCK\_SIZE\_M \ge \text{num\_expert\_tokens}$ returns immediately:
+* **DWDP Solution (Dynamic Grid Bounding):** In [`DWDP/executor/kernels/fused_moe.py`](file:///home/rustam/Projects/DWDP-Triton-MoE-Inference-Engine/DWDP/executor/kernels/fused_moe.py), the grid's $M$-dimension is sized dynamically to `expert_counts.max()`:
+  $$\text{Grid} = \left(\left\lceil \frac{\max(C_e)}{B_M} \right\rceil, E\right)$$
+  where $C_e$ is the tokens per expert count (`tokens_per_expert`), $B_M$ is `BLOCK_SIZE_M`, and $E$ is `num_experts`. Any thread block where `pid * BLOCK_SIZE_M >= num_expert_tokens` returns immediately:
   ```python
   if pid * BLOCK_SIZE_M >= num_expert_tokens:
       return
@@ -728,7 +728,7 @@ PYBIND11_MODULE(dwdp_communication_ext, m) {
 | Week | Phase | Concrete Goals & Deliverables | Expected Hours |
 | :--- | :--- | :--- | :--- |
 | **Week 1** | Math Foundations | 3Blue1Brown Linear Algebra & Calculus; nested `for` loop GEMM from scratch. | 15 hrs |
-| **Week 2** | Deep Learning Core | Karpathy Micrograd & Makemore Parts 1–3; scalar autograd engine in pure Python. | 20 hrs |
+| **Week 2** | Deep Learning Core | Karpathy Micrograd & Makemore Parts 1-3; scalar autograd engine in pure Python. | 20 hrs |
 | **Week 3** | Transformers | Karpathy Let's Build GPT; self-attention & causal masking from scratch. | 20 hrs |
 | **Week 4** | LLaMA & SwiGLU | Umar Jamil LLaMA; implement RoPE, RMSNorm, and SwiGLU in PyTorch. | 18 hrs |
 | **Week 5** | MoE Architecture | Umar Jamil Mixtral; build Assignment 1 (Naive MoE) and Assignment 2 (`torch.profiler`). | 20 hrs |
