@@ -8,6 +8,16 @@ Provides clean, verifiable, and high-performance FP16 MoE kernels:
 """
 
 from .align import AlignedMoEData, align_tokens_by_expert
+from .kernels import launch_down_proj, launch_fused_swiglu
+from .layer import TritonMoELayer, triton_moe_layer
 from .reference import moe_reference
 
-__all__ = ["AlignedMoEData", "align_tokens_by_expert", "moe_reference"]
+__all__ = [
+    "AlignedMoEData",
+    "TritonMoELayer",
+    "align_tokens_by_expert",
+    "launch_down_proj",
+    "launch_fused_swiglu",
+    "moe_reference",
+    "triton_moe_layer",
+]
