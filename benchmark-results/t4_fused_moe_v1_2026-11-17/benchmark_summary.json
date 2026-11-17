@@ -1,0 +1,81 @@
+{
+  "gpu_name": "Tesla T4",
+  "compute_capability": "7.5",
+  "torch_version": "2.14.1+cu130",
+  "total_vram_gb": 14.56317138671875,
+  "shapes": {
+    "hidden_dim": 2048,
+    "moe_intermediate_dim": 1408,
+    "num_experts": 64,
+    "top_k": 4,
+    "dtype": "torch.float16"
+  },
+  "single_gemm_ratio_triton_vs_cublas": 17.399423128759793,
+  "results": [
+    {
+      "num_tokens": 1,
+      "naive_loop_ms": 4.700992107391357,
+      "naive_loop_p95_ms": 5.5311360359191895,
+      "sorted_matmul_ms": 3.3914880752563477,
+      "sorted_matmul_p95_ms": 3.778592109680176,
+      "triton_ms": 5.534912109375,
+      "triton_p95_ms": 5.9555840492248535,
+      "roofline_cublas_ms": 0.13500800728797913,
+      "roofline_cublas_p95_ms": 0.15251199901103973,
+      "triton_cuda_launches": 181,
+      "speedup_vs_sorted": 0.6127447027590314
+    },
+    {
+      "num_tokens": 8,
+      "naive_loop_ms": 13.851679801940918,
+      "naive_loop_p95_ms": 24.51532745361328,
+      "sorted_matmul_ms": 7.753280162811279,
+      "sorted_matmul_p95_ms": 10.96019172668457,
+      "triton_ms": 24.579296112060547,
+      "triton_p95_ms": 27.865055084228516,
+      "roofline_cublas_ms": 0.10367999970912933,
+      "roofline_cublas_p95_ms": 0.12140800058841705,
+      "triton_cuda_launches": 574,
+      "speedup_vs_sorted": 0.3154394709865962
+    },
+    {
+      "num_tokens": 64,
+      "naive_loop_ms": 31.85139274597168,
+      "naive_loop_p95_ms": 40.2213134765625,
+      "sorted_matmul_ms": 16.871328353881836,
+      "sorted_matmul_p95_ms": 18.152095794677734,
+      "triton_ms": 70.41680145263672,
+      "triton_p95_ms": 76.58809661865234,
+      "roofline_cublas_ms": 0.14524799585342407,
+      "roofline_cublas_p95_ms": 0.16592000424861908,
+      "triton_cuda_launches": 1540,
+      "speedup_vs_sorted": 0.23959237008556428
+    },
+    {
+      "num_tokens": 512,
+      "naive_loop_ms": 44.1258544921875,
+      "naive_loop_p95_ms": 58.89583969116211,
+      "sorted_matmul_ms": 18.17184066772461,
+      "sorted_matmul_p95_ms": 22.71798324584961,
+      "triton_ms": 92.63801574707031,
+      "triton_p95_ms": 102.82307434082031,
+      "roofline_cublas_ms": 0.9639359712600708,
+      "roofline_cublas_p95_ms": 1.798848032951355,
+      "triton_cuda_launches": 1563,
+      "speedup_vs_sorted": 0.19615964915892853
+    },
+    {
+      "num_tokens": 4096,
+      "naive_loop_ms": 35.97011184692383,
+      "naive_loop_p95_ms": 39.929664611816406,
+      "sorted_matmul_ms": 26.265024185180664,
+      "sorted_matmul_p95_ms": 34.46742248535156,
+      "triton_ms": 402.3177795410156,
+      "triton_p95_ms": 423.5174255371094,
+      "roofline_cublas_ms": 16.03113555908203,
+      "roofline_cublas_p95_ms": 17.587488174438477,
+      "triton_cuda_launches": 1755,
+      "speedup_vs_sorted": 0.06528427407594346
+    }
+  ]
+}
