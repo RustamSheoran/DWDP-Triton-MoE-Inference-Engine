@@ -53,8 +53,6 @@ def make_executor_output() -> ExecutorOutput:
             expert_starts=torch.tensor([0, 2], dtype=torch.int64),
             expert_ends=torch.tensor([2, 4], dtype=torch.int64),
             stream_assignments=torch.tensor([0, 0], dtype=torch.int64),
-            communication_remote_expert_ids=torch.empty(0, dtype=torch.int64),
-            communication_policy="static",
             scheduling_policy="round_robin",
         ),
         statistics=ExecutionStatistics(

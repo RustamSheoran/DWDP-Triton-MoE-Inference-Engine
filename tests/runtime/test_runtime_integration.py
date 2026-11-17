@@ -55,7 +55,6 @@ def test_runtime_executes_complete_pipeline() -> None:
     assert torch.allclose(output.hidden_states, expected)
     assert output.dispatch_plan.metadata.num_assignments == 2
     assert output.execution_plan.statistics.num_active_experts == 2
-    assert output.communication_plan.statistics.num_remote_experts == 0
     assert output.executor_output.statistics.num_executed_experts == 2
     assert output.merger_output.statistics.num_tokens == 2
     assert output.profile is not None
@@ -71,15 +70,6 @@ def test_runtime_workspace_reuse() -> None:
 
     assert runtime.context.workspaces.estimated_bytes() == first_bytes
     assert first_bytes > 0
-
-
-def test_runtime_creates_no_cuda_streams_for_cpu_reference_execution() -> None:
-    runtime = make_runtime()
-
-    runtime(torch.randn(1, 2, 4))
-
-    assert runtime.context.streams is not None
-    assert not runtime.context.streams.initialized
 
 
 

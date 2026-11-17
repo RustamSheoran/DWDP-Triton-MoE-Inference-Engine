@@ -38,7 +38,6 @@ DWDP_STAGE_NAMES = (
     "router",
     "dispatcher",
     "scheduler",
-    "comms_planner",
     "executor",
     "merger",
 )
@@ -175,20 +174,12 @@ def _run_dwdp_staged(
             workspace=workspaces.scheduler if workspaces is not None else None,
         ),
     )
-    communication_plan = stage(
-        "comms_planner",
-        lambda: block.comms_planner(
-            execution_plan,
-            workspace=workspaces.comms if workspaces is not None else None,
-        ),
-    )
     executor_output = stage(
         "executor",
         lambda: block.executor(
             hidden_states,
             dispatch_plan,
             execution_plan,
-            communication_plan,
             workspace=workspaces.executor if workspaces is not None else None,
         ),
     )

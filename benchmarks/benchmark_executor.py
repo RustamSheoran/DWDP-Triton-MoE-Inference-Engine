@@ -11,17 +11,6 @@ if _REPO_ROOT not in sys.path:
 
 import torch  # noqa: E402
 
-from DWDP.comms_planner import (  # noqa: E402
-    CommunicationCostModel,
-    CommunicationGraph,
-    CommunicationPlan,
-    CommunicationStatistics,
-    DependencyMetadata as CommunicationDependencyMetadata,
-    OverlapPlan,
-    PrefetchPlan,
-    SynchronizationMetadata as CommunicationSynchronizationMetadata,
-    TopologyMetadata,
-)
 from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
 from DWDP.executor import ExecutorConfig, ExecutorWorkspace, PyTorchExecutor  # noqa: E402
 from DWDP.executor.experts import ExpertRegistry  # noqa: E402
@@ -125,44 +114,7 @@ def make_plans(
         scheduling_policy="round_robin",
         deterministic=True,
     )
-    empty_i64 = torch.empty(0, dtype=torch.int64, device=device)
-    empty_f32 = torch.empty(0, dtype=torch.float32, device=device)
-    communication_plan = CommunicationPlan(
-        local_expert_ids=active,
-        remote_expert_ids=empty_i64,
-        graph=CommunicationGraph((), (), empty_i64, empty_i64, empty_i64),
-        communication_descriptors=(),
-        transfer_descriptors=(),
-        communication_groups=(),
-        topology=TopologyMetadata(
-            0,
-            1,
-            0,
-            torch.tensor([0], dtype=torch.int64, device=device),
-            torch.tensor([0], dtype=torch.int64, device=device),
-            None,
-            None,
-            None,
-            (),
-            ((0,),),
-            "single_gpu",
-            0.0,
-            0.0,
-        ),
-        synchronization=CommunicationSynchronizationMetadata(
-            empty_i64, empty_i64, empty_i64, empty_i64
-        ),
-        dependencies=CommunicationDependencyMetadata(empty_i64, empty_i64, empty_i64),
-        prefetch=PrefetchPlan(empty_i64, empty_i64, empty_f32),
-        overlap=OverlapPlan(empty_i64, empty_i64, empty_f32),
-        cost_model=CommunicationCostModel((), 0, 0.0, 0.0, 0.0),
-        statistics=CommunicationStatistics(
-            active.numel(), 0, 0, 0, 0, 0, 0, 0.0, "static"
-        ),
-        planner_policy="static",
-        deterministic=True,
-    )
-    return dispatch_plan, execution_plan, communication_plan
+    return dispatch_plan, execution_plan
 
 
 def time_callable(fn, warmup: int, iters: int, device: str) -> float:
@@ -191,7 +143,7 @@ def main() -> None:
         raise RuntimeError("CUDA requested but not available")
 
     hidden_states = torch.randn(args.tokens, args.hidden_size, device=args.device)
-    dispatch_plan, execution_plan, communication_plan = make_plans(
+    dispatch_plan, execution_plan = make_plans(
         args.tokens, args.num_experts, args.device
     )
     experts = ExpertRegistry(
@@ -208,13 +160,12 @@ def main() -> None:
             hidden_states,
             dispatch_plan,
             execution_plan,
-            communication_plan,
             workspace=workspace,
         )
 
     def run_without_workspace():
         return executor(
-            hidden_states, dispatch_plan, execution_plan, communication_plan
+            hidden_states, dispatch_plan, execution_plan
         )
 
     with torch.no_grad():

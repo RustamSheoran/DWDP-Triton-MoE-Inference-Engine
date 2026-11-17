@@ -13,7 +13,6 @@ except ImportError:  # pragma: no cover - torch always ships distributed on CUDA
 from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, build_executor
 from DWDP.merger import MergerConfig, build_merger
-from DWDP.comms_planner import CommunicationPlannerConfig, build_communication_planner
 from DWDP.router import LinearTopKRouter, MetadataLevel, RouterConfig
 from DWDP.scheduler import SchedulerConfig, SchedulerMetadataLevel, build_scheduler
 from DWDP.runtime.config import RuntimeConfig
@@ -112,20 +111,6 @@ class DWDPMoEBlock(nn.Module):
                 enable_barrier_metadata=False,
             )
         )
-        self.comms_planner = build_communication_planner(
-            CommunicationPlannerConfig(
-                planner_policy=config.communication_policy,
-                deterministic=config.deterministic,
-                enable_workspace=config.enable_workspace,
-                world_size=config.world_size,
-                local_rank=config.local_rank,
-                enable_prefetch_metadata=False,
-                enable_overlap_metadata=False,
-                enable_topology_metadata=False,
-                enable_cost_model=False,
-                enable_statistics=False,
-            )
-        )
         self.executor = build_executor(
             ExecutorConfig(
                 backend=config.executor_backend,
@@ -153,95 +138,6 @@ class DWDPMoEBlock(nn.Module):
             )
         )
 
-    def attach_expert_table(self, table) -> None:
-        """Bind the post-handle-exchange GlobalExpertTable to this layer."""
-
-        self.expert_table = table
-        attach = getattr(self.comms_planner, "attach_expert_table", None)
-        if attach is not None:
-            attach(table)
-
-    def _ep_decode_forward(self, hidden_states: torch.Tensor):
-        """Decode-phase Expert-Parallel path (Project 1 hybrid executor).
-
-        At small batch sizes the compute-to-weight ratio collapses, so
-        streaming a whole expert's weights over NVLink can no longer be hidden
-        behind the GEMM. EP is the cheaper side of the trade here: it moves the
-        few token activations instead, via two all_to_all exchanges (dispatch
-        then combine) around purely local expert compute.
-        """
-
-        router_output = self.router(hidden_states)
-        topk_indices = router_output.topk_indices
-        topk_weights = router_output.topk_weights
-
-        world_size = self.config.world_size
-        rank = self.config.local_rank
-        num_tokens, hidden_size = hidden_states.shape
-        experts_per_rank = max(1, (self.num_experts + world_size - 1) // world_size)
-
-        # Flatten (token, slot) pairs and bucket them by owning rank.
-        flat_experts = topk_indices.reshape(-1)
-        flat_tokens = torch.arange(
-            num_tokens, device=hidden_states.device
-        ).repeat_interleave(topk_indices.shape[1])
-        flat_weights = topk_weights.reshape(-1)
-        target_ranks = torch.clamp(flat_experts // experts_per_rank, max=world_size - 1)
-
-        order = torch.argsort(target_ranks, stable=True)
-        sorted_ranks = target_ranks[order]
-        send_tokens = hidden_states[flat_tokens[order]]
-        send_experts = flat_experts[order]
-
-        send_counts = torch.bincount(sorted_ranks, minlength=world_size)
-        recv_counts = torch.empty_like(send_counts)
-        dist.all_to_all_single(recv_counts, send_counts)
-
-        send_list = send_counts.tolist()
-        recv_list = recv_counts.tolist()
-        total_recv = int(sum(recv_list))
-
-        # Dispatch: activations and their expert ids to the owning ranks.
-        recv_tokens = torch.empty(
-            (total_recv, hidden_size),
-            device=hidden_states.device,
-            dtype=hidden_states.dtype,
-        )
-        dist.all_to_all_single(
-            recv_tokens, send_tokens, recv_list, send_list
-        )
-        recv_experts = torch.empty(
-            total_recv, device=hidden_states.device, dtype=send_experts.dtype
-        )
-        dist.all_to_all_single(
-            recv_experts, send_experts, recv_list, send_list
-        )
-
-        # Local compute: every received token is routed to a locally-owned expert.
-        computed = torch.zeros_like(recv_tokens)
-        if total_recv:
-            local_lo = rank * experts_per_rank
-            local_hi = min(self.num_experts, (rank + 1) * experts_per_rank)
-            for expert_id in range(local_lo, local_hi):
-                mask = recv_experts == expert_id
-                if not bool(mask.any()):
-                    continue
-                module = self.executor.communication_engine.getWeight(expert_id).module
-                computed[mask] = module(recv_tokens[mask]).to(computed.dtype)
-
-        # Combine: results travel back along the reversed partition.
-        returned = torch.empty_like(send_tokens)
-        dist.all_to_all_single(
-            returned, computed, send_list, recv_list
-        )
-
-        # Undo the sort, apply routing weights, and reduce the top-k slots.
-        weighted = returned * flat_weights[order].unsqueeze(-1).to(returned.dtype)
-        output = torch.zeros_like(hidden_states)
-        output.index_add_(0, flat_tokens[order], weighted)
-
-        return output, router_output
-
     def _dwdp_pipeline(self, hidden_states: torch.Tensor):
         """Run router -> dispatch -> schedule -> plan -> execute -> merge.
 
@@ -265,15 +161,10 @@ class DWDPMoEBlock(nn.Module):
             dispatch_plan,
             workspace=workspaces.scheduler if workspaces is not None else None,
         )
-        communication_plan = self.comms_planner(
-            execution_plan,
-            workspace=workspaces.comms if workspaces is not None else None,
-        )
         executor_output = self.executor(
             hidden_states,
             dispatch_plan,
             execution_plan,
-            communication_plan,
             workspace=workspaces.executor if workspaces is not None else None,
         )
         merger_output = self.merger(
@@ -306,8 +197,8 @@ class DWDPMoEBlock(nn.Module):
 
         if self.shared_expert is None:
             return None
-        streams = self.context.streams
-        if streams is None or not streams.initialized:
+        streams = getattr(self.context, "streams", None)
+        if streams is None or not getattr(streams, "initialized", False):
             return None
         shared_stream = streams.compute
         shared_stream.wait_stream(torch.cuda.current_stream())
@@ -340,8 +231,8 @@ class DWDPMoEBlock(nn.Module):
                 else:
                     shared_output.mul_(gate)
         else:
-            streams = self.context.streams
-            if streams is not None and streams.initialized:
+            streams = getattr(self.context, "streams", None)
+            if streams is not None and getattr(streams, "initialized", False):
                 torch.cuda.current_stream().wait_stream(streams.compute)
         if torch.is_grad_enabled():
             return routed_output + shared_output
@@ -357,23 +248,7 @@ class DWDPMoEBlock(nn.Module):
         shared_output = self._launch_shared_expert(hidden_states)
 
         # Hybrid executor: decode-EP below the threshold, prefill-DWDP above it.
-        if (
-            hidden_states.shape[0] <= self.config.ep_batch_size_threshold
-            and self.config.world_size > 1
-            and dist is not None
-            and dist.is_available()
-            and dist.is_initialized()
-        ):
-            output, router_output = self._ep_decode_forward(hidden_states)
-            output = self._add_shared_expert(output, hidden_states, shared_output)
-            if self.returns_router_logits:
-                return output, router_output.router_logits
-            return output
-
         if not self.config.enable_profiling:
-            # CUDA graph path when enabled. On single-GPU the prefetch loop is
-            # a no-op (empty remote list), so it stays outside to keep the
-            # captured region free of the .tolist() device->host sync.
             if self._graph_runner is not None:
                 output_hidden, router_logits = self._graph_runner(
                     hidden_states=hidden_states
@@ -389,25 +264,12 @@ class DWDPMoEBlock(nn.Module):
                     dispatch_plan,
                     workspace=workspaces.scheduler if workspaces is not None else None,
                 )
-                communication_plan = self.comms_planner(
-                    execution_plan,
-                    workspace=workspaces.comms if workspaces is not None else None,
-                )
-
-                for expert_id in communication_plan.remote_expert_ids.tolist():
-                    self.executor.communication_engine.prefetch(expert_id)
-                for expert_id in communication_plan.remote_expert_ids.tolist():
-                    self.executor.communication_engine.wait(expert_id)
-
                 executor_output = self.executor(
                     hidden_states,
                     dispatch_plan,
                     execution_plan,
-                    communication_plan,
                     workspace=workspaces.executor if workspaces is not None else None,
                 )
-
-                self.executor.communication_engine.swap_buffers()
                 merger_output = self.merger(
                     executor_output,
                     workspace=workspaces.merger if workspaces is not None else None,
@@ -427,29 +289,13 @@ class DWDPMoEBlock(nn.Module):
                     dispatch_plan,
                     workspace=workspaces.scheduler if workspaces is not None else None,
                 )
-            with torch.autograd.profiler.record_function("dwdp.comms_planner"):
-                communication_plan = self.comms_planner(
-                    execution_plan,
-                    workspace=workspaces.comms if workspaces is not None else None,
-                )
-                
-            with torch.autograd.profiler.record_function("dwdp.comms_prefetch"):
-                for expert_id in communication_plan.remote_expert_ids.tolist():
-                    self.executor.communication_engine.prefetch(expert_id)
-                for expert_id in communication_plan.remote_expert_ids.tolist():
-                    self.executor.communication_engine.wait(expert_id)
-
             with torch.autograd.profiler.record_function("dwdp.executor"):
                 executor_output = self.executor(
                     hidden_states,
                     dispatch_plan,
                     execution_plan,
-                    communication_plan,
                     workspace=workspaces.executor if workspaces is not None else None,
                 )
-                
-            with torch.autograd.profiler.record_function("dwdp.comms_swap"):
-                self.executor.communication_engine.swap_buffers()
             with torch.autograd.profiler.record_function("dwdp.merger"):
                 merger_output = self.merger(
                     executor_output,
@@ -520,40 +366,7 @@ class Qwen15MoEAdapter(HuggingFaceAdapter):
                 replacement=replacement,
             )
 
-        self._bootstrap_distributed(specs, blocks)
         return len(specs)
-
-    def _bootstrap_distributed(
-        self, specs: tuple[MoELayerSpec, ...], blocks: list[DWDPMoEBlock]
-    ) -> None:
-        """Register CUDA IPC handles at load time, as the Project 1 spec requires.
-
-        Each MoE layer owns its own expert modules and therefore its own
-        communication engine, so the handle exchange runs per layer. The
-        process group itself is initialized once by the first call.
-        """
-
-        if self.config.world_size <= 1:
-            return
-
-        from DWDP.communication.distributed import bootstrap_dwdp_distributed
-
-        self.expert_tables = []
-        for spec, block in zip(specs, blocks):
-            engine = block.executor.communication_engine
-            # The engine is normally constructed lazily on the first getWeight
-            # call; IPC registration has to happen before the first forward.
-            engine.ensure_native()
-            table = bootstrap_dwdp_distributed(
-                experts=block.executor.communication_engine._registry,
-                communication_engine=engine,
-                world_size=self.config.world_size,
-                rank=self.config.local_rank,
-            )
-            if table is None:
-                continue
-            self.expert_tables.append(table)
-            block.attach_expert_table(table)
 
     def enable_cuda_graphs(self, warmup_steps: int = 3) -> int:
         """Enable CUDA graph capture on every patched MoE block.

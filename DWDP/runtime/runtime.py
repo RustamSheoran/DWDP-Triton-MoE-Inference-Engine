@@ -7,7 +7,6 @@ import torch
 from torch import nn
 
 from DWDP.adapters import BaseModelAdapter, build_adapter, get_adapter_class
-from DWDP.comms_planner import CommunicationPlannerConfig, build_communication_planner
 from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, ExpertRegistry, build_executor
 from DWDP.merger import MergerConfig, build_merger
@@ -32,7 +31,6 @@ class DWDPRuntime(nn.Module):
         router: nn.Module,
         dispatcher: nn.Module,
         scheduler: nn.Module,
-        comms_planner: nn.Module,
         executor: nn.Module,
         merger: nn.Module,
         config: RuntimeConfig | None = None,
@@ -43,7 +41,6 @@ class DWDPRuntime(nn.Module):
         self.router = router
         self.dispatcher = dispatcher
         self.scheduler = scheduler
-        self.comms_planner = comms_planner
         self.executor = executor
         self.merger = merger
         self.adapter = adapter
@@ -103,20 +100,6 @@ class DWDPRuntime(nn.Module):
                     metadata_level=SchedulerMetadataLevel.MINIMAL,
                     enable_dependency_metadata=False,
                     enable_barrier_metadata=False,
-                )
-            ),
-            comms_planner=build_communication_planner(
-                CommunicationPlannerConfig(
-                    planner_policy=runtime_config.communication_policy,
-                    deterministic=runtime_config.deterministic,
-                    enable_workspace=runtime_config.enable_workspace,
-                    world_size=runtime_config.world_size,
-                    local_rank=runtime_config.local_rank,
-                    enable_prefetch_metadata=False,
-                    enable_overlap_metadata=False,
-                    enable_topology_metadata=False,
-                    enable_cost_model=False,
-                    enable_statistics=False,
                 )
             ),
             executor=build_executor(
@@ -194,15 +177,10 @@ class DWDPRuntime(nn.Module):
                 dispatch_plan,
                 workspace=workspaces.scheduler if workspaces is not None else None,
             )
-            communication_plan = self.comms_planner(
-                execution_plan,
-                workspace=workspaces.comms if workspaces is not None else None,
-            )
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
             merger_output = self.merger(
@@ -213,7 +191,6 @@ class DWDPRuntime(nn.Module):
                 router_output=router_output,
                 dispatch_plan=dispatch_plan,
                 execution_plan=execution_plan,
-                communication_plan=communication_plan,
                 executor_output=executor_output,
                 merger_output=merger_output,
                 profile=None,
@@ -231,17 +208,11 @@ class DWDPRuntime(nn.Module):
                 dispatch_plan,
                 workspace=workspaces.scheduler if workspaces is not None else None,
             )
-        with profiler.record("comms_planner"):
-            communication_plan = self.comms_planner(
-                execution_plan,
-                workspace=workspaces.comms if workspaces is not None else None,
-            )
         with profiler.record("executor"):
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
         with profiler.record("merger"):
@@ -255,7 +226,6 @@ class DWDPRuntime(nn.Module):
             router_output=router_output,
             dispatch_plan=dispatch_plan,
             execution_plan=execution_plan,
-            communication_plan=communication_plan,
             executor_output=executor_output,
             merger_output=merger_output,
             profile=profiler.finish(workspace_bytes=workspace_bytes),
@@ -278,7 +248,6 @@ class DWDPRuntime(nn.Module):
         self.router = torch.compile(self.router)
         self.dispatcher = torch.compile(self.dispatcher)
         self.scheduler = torch.compile(self.scheduler)
-        self.comms_planner = torch.compile(self.comms_planner)
         self.executor = torch.compile(self.executor)
         self.merger = torch.compile(self.merger)
         return self

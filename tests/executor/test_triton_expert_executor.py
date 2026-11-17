@@ -4,17 +4,6 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from DWDP.comms_planner import (  # noqa: E402
-    CommunicationCostModel,
-    CommunicationGraph,
-    CommunicationPlan,
-    CommunicationStatistics,
-    DependencyMetadata as CommunicationDependencyMetadata,
-    OverlapPlan,
-    PrefetchPlan,
-    SynchronizationMetadata as CommunicationSynchronizationMetadata,
-    TopologyMetadata,
-)
 from DWDP.dispatcher import DispatchMetadata, DispatchPlan, ExpertAssignments  # noqa: E402
 from DWDP.executor import (  # noqa: E402
     ExecutorConfig,
@@ -101,44 +90,6 @@ def make_execution_plan() -> ExecutionPlan:
     )
 
 
-def make_communication_plan() -> CommunicationPlan:
-    empty_i64 = torch.empty(0, dtype=torch.int64)
-    empty_f32 = torch.empty(0, dtype=torch.float32)
-    return CommunicationPlan(
-        local_expert_ids=torch.tensor([0, 1], dtype=torch.int64),
-        remote_expert_ids=empty_i64,
-        graph=CommunicationGraph((), (), empty_i64, empty_i64, empty_i64),
-        communication_descriptors=(),
-        transfer_descriptors=(),
-        communication_groups=(),
-        topology=TopologyMetadata(
-            0,
-            1,
-            0,
-            torch.tensor([0], dtype=torch.int64),
-            torch.tensor([0], dtype=torch.int64),
-            None,
-            None,
-            None,
-            (),
-            ((0,),),
-            "single_gpu",
-            0.0,
-            0.0,
-        ),
-        synchronization=CommunicationSynchronizationMetadata(
-            empty_i64, empty_i64, empty_i64, empty_i64
-        ),
-        dependencies=CommunicationDependencyMetadata(empty_i64, empty_i64, empty_i64),
-        prefetch=PrefetchPlan(empty_i64, empty_i64, empty_f32),
-        overlap=OverlapPlan(empty_i64, empty_i64, empty_f32),
-        cost_model=CommunicationCostModel((), 0, 0.0, 0.0, 0.0),
-        statistics=CommunicationStatistics(2, 0, 0, 0, 0, 0, 0, 0.0, "static"),
-        planner_policy="static",
-        deterministic=True,
-    )
-
-
 def test_qwen_provider_preserves_original_weight_storage() -> None:
     registry = make_registry()
     provider = extract_qwen_swiglu_weight_provider(registry)
@@ -174,13 +125,12 @@ def test_triton_skeleton_matches_pytorch_executor() -> None:
     hidden_states = torch.randn(4, 4)
     dispatch_plan = make_dispatch_plan()
     execution_plan = make_execution_plan()
-    communication_plan = make_communication_plan()
 
     reference_output = reference(
-        hidden_states, dispatch_plan, execution_plan, communication_plan
+        hidden_states, dispatch_plan, execution_plan
     )
     triton_output = triton(
-        hidden_states, dispatch_plan, execution_plan, communication_plan
+        hidden_states, dispatch_plan, execution_plan
     )
 
     assert torch.allclose(

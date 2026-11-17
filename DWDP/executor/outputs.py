@@ -47,15 +47,13 @@ class OutputMetadata:
 
 @dataclass(slots=True)
 class ExecutionMetadata:
-    """Executor metadata preserving scheduler and communication context."""
+    """Executor metadata preserving scheduler context."""
 
     execution_order: torch.Tensor
     expert_queue: torch.Tensor
     expert_starts: torch.Tensor
     expert_ends: torch.Tensor
     stream_assignments: torch.Tensor
-    communication_remote_expert_ids: torch.Tensor
-    communication_policy: str
     scheduling_policy: str
 
 

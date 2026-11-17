@@ -19,7 +19,6 @@ import logging
 
 import torch
 
-from DWDP.comms_planner.metadata import CommunicationPlan
 from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
 
@@ -93,7 +92,6 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
         hidden_states: torch.Tensor,
         dispatch_plan: DispatchPlan,
         execution_plan: ExecutionPlan,
-        communication_plan: CommunicationPlan,
         workspace: ExecutorWorkspace | None = None,
     ) -> ExecutorOutput:
         """Execute experts through TMA FP8 GEMMs, or fall back when unsupported."""
@@ -103,13 +101,12 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspace,
             )
             return output
 
         return self._forward_tma(
-            hidden_states, dispatch_plan, execution_plan, communication_plan, workspace
+            hidden_states, dispatch_plan, execution_plan, workspace
         )
 
     def _forward_tma(
@@ -117,7 +114,6 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
         hidden_states: torch.Tensor,
         dispatch_plan: DispatchPlan,
         execution_plan: ExecutionPlan,
-        communication_plan: CommunicationPlan,
         workspace: ExecutorWorkspace | None,
     ) -> ExecutorOutput:
         """TMA path: weights quantized once per expert, activations per forward.
@@ -128,7 +124,7 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
 
         flat_hidden_states, token_shape = flatten_hidden_states(hidden_states)
         validate_executor_inputs(
-            flat_hidden_states, dispatch_plan, execution_plan, communication_plan
+            flat_hidden_states, dispatch_plan, execution_plan
         )
         if self.weight_provider.has_bias:
             raise ValueError("TMA FP8 execution does not support biased projections")
@@ -238,8 +234,6 @@ class TritonTMAFP8Executor(TritonExpertExecutor):
                 expert_starts=execution_plan.expert_starts,
                 expert_ends=execution_plan.expert_ends,
                 stream_assignments=execution_plan.stream_assignments,
-                communication_remote_expert_ids=communication_plan.remote_expert_ids,
-                communication_policy=communication_plan.planner_policy,
                 scheduling_policy=execution_plan.scheduling_policy,
             ),
             statistics=ExecutionStatistics(

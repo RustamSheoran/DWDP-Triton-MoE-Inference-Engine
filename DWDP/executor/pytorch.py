@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import torch
 
-from DWDP.comms_planner.metadata import CommunicationPlan
 from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
 
@@ -34,7 +33,6 @@ class PyTorchExecutor(BaseExecutor):
         hidden_states: torch.Tensor,
         dispatch_plan: DispatchPlan,
         execution_plan: ExecutionPlan,
-        communication_plan: CommunicationPlan,
         workspace: ExecutorWorkspace | None = None,
     ) -> ExecutorOutput:
         """Execute experts exactly in scheduler-provided order."""
@@ -44,7 +42,6 @@ class PyTorchExecutor(BaseExecutor):
             flat_hidden_states,
             dispatch_plan,
             execution_plan,
-            communication_plan,
         )
 
         active_workspace = workspace if self.config.enable_workspace else None
@@ -196,8 +193,6 @@ class PyTorchExecutor(BaseExecutor):
             expert_starts=execution_plan.expert_starts,
             expert_ends=execution_plan.expert_ends,
             stream_assignments=execution_plan.stream_assignments,
-            communication_remote_expert_ids=communication_plan.remote_expert_ids,
-            communication_policy=communication_plan.planner_policy,
             scheduling_policy=execution_plan.scheduling_policy,
         )
         statistics = ExecutionStatistics(
@@ -377,12 +372,12 @@ class PyTorchExecutor(BaseExecutor):
         expert_id: int,
         hidden_states: torch.Tensor,
     ) -> torch.Tensor:
-        expert_ptr = self.communication_engine.getResidentPointer(expert_id)
+        expert_mod = self.experts.get(expert_id)
         if self.config.enable_profiling:
             with torch.autograd.profiler.record_function("dwdp.expert_gemms"):
-                expert_outputs = expert_ptr.module(hidden_states)
+                expert_outputs = expert_mod(hidden_states)
         else:
-            expert_outputs = expert_ptr.module(hidden_states)
+            expert_outputs = expert_mod(hidden_states)
         if expert_outputs.ndim != 2:
             raise ValueError("Expert outputs must be rank-2 [tokens, output_dim]")
         return expert_outputs

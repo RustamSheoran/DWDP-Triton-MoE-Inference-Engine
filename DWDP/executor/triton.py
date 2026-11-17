@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import torch
 
-from DWDP.comms_planner.metadata import CommunicationPlan
 from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
 
@@ -63,7 +62,6 @@ class TritonExpertExecutor(PyTorchExecutor):
         hidden_states: torch.Tensor,
         dispatch_plan: DispatchPlan,
         execution_plan: ExecutionPlan,
-        communication_plan: CommunicationPlan,
         workspace: ExecutorWorkspace | None = None,
     ) -> ExecutorOutput:
         """Run the persistent CUDA path, falling back only where CUDA is absent."""
@@ -75,7 +73,6 @@ class TritonExpertExecutor(PyTorchExecutor):
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspace,
             )
             output.backend = "triton_reference_fallback"
@@ -84,7 +81,7 @@ class TritonExpertExecutor(PyTorchExecutor):
 
         flat_hidden_states, token_shape = flatten_hidden_states(hidden_states)
         validate_executor_inputs(
-            flat_hidden_states, dispatch_plan, execution_plan, communication_plan
+            flat_hidden_states, dispatch_plan, execution_plan
         )
         if self.weight_provider.has_bias:
             raise ValueError(
@@ -199,8 +196,6 @@ class TritonExpertExecutor(PyTorchExecutor):
             expert_starts=execution_plan.expert_starts,
             expert_ends=execution_plan.expert_ends,
             stream_assignments=execution_plan.stream_assignments,
-            communication_remote_expert_ids=communication_plan.remote_expert_ids,
-            communication_policy=communication_plan.planner_policy,
             scheduling_policy=execution_plan.scheduling_policy,
         )
         statistics = ExecutionStatistics(

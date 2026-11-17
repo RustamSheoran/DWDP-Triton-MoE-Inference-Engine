@@ -214,7 +214,6 @@ _HOT_PATH_MODULES = (
     "DWDP.executor.pytorch",
     "DWDP.executor.triton",
     "DWDP.merger.pytorch",
-    "DWDP.comms_planner.static",
 )
 
 
