@@ -163,7 +163,6 @@ Future backends:
 - CUDAExecutor
 - GroupedGEMMExecutor
 - PersistentKernelExecutor
-- FP8Executor
 - DistributedExecutor
 - AsynchronousExecutor
 - MultiStreamExecutor
@@ -192,7 +191,6 @@ Future optimized implementations can fuse or replace:
 - grouped GEMM across experts
 - routing-weight application
 - output writeback
-- FP8 quantization/dequantization
 - persistent expert kernels
 - Hopper TMA movement
 - Blackwell Tensor Core paths
@@ -212,8 +210,8 @@ The logical gate/up tensor is represented by paired per-expert matrix views,
 not an eagerly concatenated `torch.Tensor`. Native Hugging Face experts own
 independent parameter storage, and concatenating all projections would
 duplicate model weights. Provider construction retains references to those
-original tensors, exposes dtype/device/format metadata for FP16, BF16, FP8,
-and INT4 backends, and makes materialization explicit.
+original tensors, exposes dtype/device/format metadata for FP16 and BF16
+backends, and makes materialization explicit.
 
 `TritonExpertExecutor` in [triton.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/triton.py) is the registered `triton` backend boundary. On CUDA it
 builds a single non-owning `TensorList` in [tensor_list.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/tensor_list.py) from finalized plans and reusable
@@ -248,36 +246,6 @@ Key Architectural Highlights:
 - **SRAM Activation Retention**: Intermediate Gate/Up activations and SwiGLU outputs are computed directly inside GPU SRAM (L1/L2 cache), preventing redundant roundtrips to main VRAM.
 - **Dynamic Work Partitioning**: Maps 2D program grids `(cdiv(tokens * top_k, BLOCK_SIZE_M), num_experts)` to achieve balanced Streaming Multiprocessor (SM) occupancy across non-uniform expert routing distributions.
 
-## Multi-Head Latent Attention (MLA) Matrix Absorption
-
-[kernels/mla_absorption.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/mla_absorption.py) provides pre-flight matrix absorption for low-rank Attention projections (`absorb_mla_weights`).
-
-- **Pre-Flight Fusion**: Fuses low-rank query projection ($W_{UQ}$) and key projection ($W_{UK}$) matrices at load time:
-  $$W_{\text{absorbed}} = W_{UQ} \cdot W_{UK}^T$$
-- **Decode Latency Reduction**: Eliminates 50% of Attention projection matrix multiplications during token generation passes.
-
-## FP8 Tile-Block Micro-Scaling Triton Kernel
-
-[kernels/fp8_microscaling.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8_microscaling.py) provides per-tile block micro-scaling (`fp8_microscaled_gemm`).
-
-- **Fine-Grained Block Scaling**: Applies $64 \times 64$ tile-block micro-scale factors directly inside `@triton.jit` GEMM execution.
-- **Precision & Speed**: Preserves 99.9% FP32 numerical accuracy while executing at 2x FP8 hardware speed.
-
-## Tesla T4 NVFP4 Byte-Packed Tensor Core Kernel
-
-[kernels/fp4_packing.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp4_packing.py) provides Turing-optimized 4-bit byte packing (`unpack_nvfp4_weights`).
-
-- **UINT8 Memory Compression**: Packs pairs of 4-bit weights into single `UINT8` bytes for $2\times$ memory transfer compression over PCIe/VRAM buses.
-- **GPU Register Unpacking**: Unpacks byte pairs directly inside GPU registers into FP16 for Tesla T4 Turing Tensor Cores.
-
-## Native FP8 Execution & Micro-Scaling
-
-The persistent executor prefers native FP8 on capable CUDA hardware (Compute Capability 8.9+). It selects E4M3 (`float8_e4m3fn`) when exposed by the PyTorch/Triton stack, with E5M2 as fallback. `backend="triton_fp8"` enforces mandatory native FP8 execution.
-
-Key FP8 implementation files & features:
-- **Storage Conversion**: [`convert_qwen_weights_to_fp8_once()`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py#L17) in [fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py) converts parameter storage in place while computing per-expert fine-grained scaling maps (`scale_map`), keeping `TensorList` pointer-array layouts unchanged.
-- **Single-Pass Workspace Quantization**: [`quantize_activations_once()`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py#L54) in [fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py) quantizes inputs into workspace-allocated FP8 buffers once per forward pass while computing per-token/per-tensor scale factors (`scale_out`).
-- **Micro-Scale Dequantization in Triton Kernels**: Dedicated FP8 kernels [`_persistent_fp8_gather_swiglu`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py#L126) and [`_persistent_fp8_down_route_store`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py#L218) in [kernels/fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py) load scaling pointers from `quantization_ptrs`, accumulate dot products in FP32, and apply fine-grained scale factor dequantization before activation functions and output stores.
 ## Distributed Execution
 
 The current backend rejects remote experts. Distributed execution will require a backend that consumes populated `CommunicationPlan` descriptors.
