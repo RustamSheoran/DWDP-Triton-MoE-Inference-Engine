@@ -20,15 +20,11 @@ and strictly verified in this suite.
 from __future__ import annotations
 
 import os
-
-# Enable Triton CPU interpret mode for sandboxed / CPU-only testing
-os.environ["TRITON_INTERPRET"] = "1"
-
 import pytest
 import torch
 
 from DWDP.moe.layer import triton_moe_layer
-from DWDP.moe.reference import moe_reference
+from DWDP.moe.reference import moe_reference, moe_reference_grouped
 
 
 @pytest.fixture
@@ -229,3 +225,64 @@ def test_triton_moe_gpu_skewed():
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
     _verify_parity(out, ref, "GPU Skewed Expert 0")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_triton_interpret_unset_on_cuda():
+    """Assert TRITON_INTERPRET is not enabled when running on a CUDA GPU."""
+    assert os.environ.get("TRITON_INTERPRET") != "1", (
+        "TRITON_INTERPRET must not be set on GPU runs, as it bypasses compiled CUDA kernels."
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("block_m", [16, 32])
+@pytest.mark.parametrize("num_tokens", [1, 17, 512])
+def test_triton_moe_gpu_realistic_shapes(num_tokens, block_m):
+    """Test realistic production shapes on GPU against moe_reference_grouped in FP32.
+
+    Shapes correspond to Qwen1.5-MoE-A2.7B:
+    hidden=2048, intermediate=1408, num_experts=64, top_k=4.
+    """
+    device = torch.device("cuda")
+    torch.manual_seed(42 + num_tokens + block_m)
+
+    hidden_dim = 2048
+    intermediate_dim = 1408
+    num_experts = 64
+    top_k = 4
+
+    w1 = torch.randn(num_experts, 2 * intermediate_dim, hidden_dim, dtype=torch.float16, device=device) * 0.02
+    w2 = torch.randn(num_experts, hidden_dim, intermediate_dim, dtype=torch.float16, device=device) * 0.02
+    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+    topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64, device=device)
+    topk_weights = torch.softmax(torch.randn(num_tokens, top_k, device=device), dim=-1).half()
+
+    out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=block_m)
+
+    # Reference computed in FP32 for numerical ground truth
+    ref = moe_reference_grouped(
+        x.float(),
+        w1.float(),
+        w2.float(),
+        topk_indices,
+        topk_weights.float(),
+    )
+
+    diff = out.float() - ref.float()
+    max_abs_err = torch.max(torch.abs(diff)).item()
+    ref_norm = torch.linalg.norm(ref.float()).item()
+    frob_ratio = (torch.linalg.norm(diff).item() / ref_norm) if ref_norm > 0 else 0.0
+
+    print(
+        f"\n[GPU Realistic MoE] T={num_tokens}, block_m={block_m} | "
+        f"max_abs_err={max_abs_err:.6f}, frob_ratio={frob_ratio:.6f}"
+    )
+
+    assert frob_ratio < 1e-2, (
+        f"Frobenius norm ratio {frob_ratio:.6e} exceeded 1e-2 at T={num_tokens}, block_m={block_m}"
+    )
+    assert max_abs_err < 5e-2, (
+        f"Max absolute error {max_abs_err:.6e} exceeded 5e-2 at T={num_tokens}, block_m={block_m}"
+    )
+

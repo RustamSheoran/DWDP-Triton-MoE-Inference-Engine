@@ -1,8 +1,11 @@
 """Token sorting and block alignment for MoE execution.
 
-Groups tokens assigned to each expert and pads expert assignments to multiples
-of BLOCK_M so that Triton GEMM kernels operate on uniform tiles with zero branching
-and optimal cache reuse.
+Vectorized zero-synchronization token alignment and expert grouping.
+Computes token-to-block layout using pure GPU vector primitives:
+- Zero device-to-host synchronization calls (0 .item(), 0 .tolist()).
+- Zero Python loops over experts.
+- Sized using static analytical upper bounds to avoid dynamic reallocation.
+- Padding to multiples of BLOCK_M ensuring branchless Triton GEMM execution.
 """
 
 from __future__ import annotations
@@ -15,16 +18,22 @@ import torch
 class AlignedMoEData:
     """Structure holding token alignments and block metadata."""
 
-    sorted_token_ids: torch.Tensor       # [num_tokens_post_padded] int32
-    sorted_weights: torch.Tensor         # [num_tokens_post_padded] float
-    sorted_slot_ids: torch.Tensor        # [num_tokens_post_padded] int32 (token_idx * top_k + k)
-    expert_ids_per_block: torch.Tensor   # [num_blocks] int32
-    valid_mask: torch.Tensor             # [num_tokens_post_padded] bool
-    num_tokens_post_padded: int
-    num_blocks: int
+    sorted_token_ids: torch.Tensor       # [max_padded_tokens] int32
+    sorted_weights: torch.Tensor         # [max_padded_tokens] float
+    sorted_slot_ids: torch.Tensor        # [max_padded_tokens] int32 (token_idx * top_k + k)
+    expert_ids_per_block: torch.Tensor   # [num_blocks_ub] int32
+    valid_mask: torch.Tensor             # [max_padded_tokens] bool
+    num_tokens_post_padded: torch.Tensor # [1] int64 device tensor (exact padded token count)
+    num_blocks_ub: int                   # static upper bound on number of blocks
+    max_padded_tokens: int               # num_blocks_ub * block_size
     block_size: int
     num_tokens: int
     top_k: int
+
+    @property
+    def num_blocks(self) -> int:
+        """Alias for num_blocks_ub for backward compatibility."""
+        return self.num_blocks_ub
 
 
 def align_tokens_by_expert(
@@ -33,9 +42,7 @@ def align_tokens_by_expert(
     num_experts: int,
     block_size: int,
 ) -> AlignedMoEData:
-    """Align and sort token assignments by expert with BLOCK_M padding.
-
-    Written using straightforward PyTorch operations (correctness-first).
+    """Align and sort token assignments by expert with BLOCK_M padding (zero-sync).
 
     Args:
         topk_indices: Tensor of shape [num_tokens, top_k], expert assignments.
@@ -49,96 +56,72 @@ def align_tokens_by_expert(
     device = topk_indices.device
     num_tokens, top_k = topk_indices.shape
 
+    # Static upper bounds on blocks and padded tokens (known without GPU sync)
     if num_tokens == 0:
         empty_int = torch.empty(0, dtype=torch.int32, device=device)
         empty_weight = torch.empty(0, dtype=topk_weights.dtype, device=device)
         empty_bool = torch.empty(0, dtype=torch.bool, device=device)
+        zero_tensor = torch.zeros(1, dtype=torch.int64, device=device)
         return AlignedMoEData(
             sorted_token_ids=empty_int,
             sorted_weights=empty_weight,
             sorted_slot_ids=empty_int,
             expert_ids_per_block=empty_int,
             valid_mask=empty_bool,
-            num_tokens_post_padded=0,
-            num_blocks=0,
+            num_tokens_post_padded=zero_tensor,
+            num_blocks_ub=0,
+            max_padded_tokens=0,
             block_size=block_size,
             num_tokens=0,
             top_k=top_k,
         )
 
-    # Flatten assignments: each pair is (token_idx, k_idx)
+    num_blocks_ub = (num_tokens * top_k + num_experts * (block_size - 1) + block_size - 1) // block_size
+    max_padded = num_blocks_ub * block_size
+
+    # 1. Flatten expert assignments and weights
+    flat_expert_ids = topk_indices.reshape(-1)
+    flat_weights = topk_weights.reshape(-1)
+
+    # Build token indices and slot IDs
     token_indices = torch.arange(num_tokens, device=device).unsqueeze(1).expand(num_tokens, top_k).reshape(-1)
     k_indices = torch.arange(top_k, device=device).unsqueeze(0).expand(num_tokens, top_k).reshape(-1)
     slot_ids = (token_indices * top_k + k_indices).to(torch.int32)
 
-    flat_expert_ids = topk_indices.reshape(-1)
-    flat_weights = topk_weights.reshape(-1)
+    # 2. Stable sort by expert id
+    sorted_expert_ids, sort_perm = torch.sort(flat_expert_ids, stable=True)
 
-    # Count tokens per expert
+    # 3. Expert token counts & padded counts
     counts = torch.bincount(flat_expert_ids, minlength=num_experts)
+    padded_counts = ((counts + block_size - 1) // block_size) * block_size
 
-    # Calculate blocks needed per expert
-    blocks_per_expert = (counts + block_size - 1) // block_size
-    total_blocks = int(blocks_per_expert.sum().item())
-    total_padded_tokens = total_blocks * block_size
+    # 4. Expert start and end offsets in padded and unpadded space
+    padded_end = torch.cumsum(padded_counts, dim=0)
+    padded_start = padded_end - padded_counts
+    unpadded_start = torch.cumsum(counts, dim=0) - counts
 
-    if total_blocks == 0:
-        empty_int = torch.empty(0, dtype=torch.int32, device=device)
-        empty_weight = torch.empty(0, dtype=topk_weights.dtype, device=device)
-        empty_bool = torch.empty(0, dtype=torch.bool, device=device)
-        return AlignedMoEData(
-            sorted_token_ids=empty_int,
-            sorted_weights=empty_weight,
-            sorted_slot_ids=empty_int,
-            expert_ids_per_block=empty_int,
-            valid_mask=empty_bool,
-            num_tokens_post_padded=0,
-            num_blocks=0,
-            block_size=block_size,
-            num_tokens=num_tokens,
-            top_k=top_k,
-        )
+    # 5. Compute scatter destinations for each sorted token
+    intra_expert_idx = torch.arange(len(sorted_expert_ids), device=device) - unpadded_start[sorted_expert_ids]
+    dest_idx = padded_start[sorted_expert_ids] + intra_expert_idx
 
-    # Preallocate output buffers
-    sorted_token_ids = torch.zeros(total_padded_tokens, dtype=torch.int32, device=device)
-    sorted_weights = torch.zeros(total_padded_tokens, dtype=topk_weights.dtype, device=device)
-    sorted_slot_ids = torch.zeros(total_padded_tokens, dtype=torch.int32, device=device)
-    valid_mask = torch.zeros(total_padded_tokens, dtype=torch.bool, device=device)
-    expert_ids_per_block = torch.zeros(total_blocks, dtype=torch.int32, device=device)
+    # 6. Allocate static upper-bound output buffers (zero host sync)
+    sorted_token_ids = torch.zeros(max_padded, dtype=torch.int32, device=device)
+    sorted_weights = torch.zeros(max_padded, dtype=topk_weights.dtype, device=device)
+    sorted_slot_ids = torch.zeros(max_padded, dtype=torch.int32, device=device)
+    valid_mask = torch.zeros(max_padded, dtype=torch.bool, device=device)
 
-    # Sort assignments into expert blocks
-    current_token_offset = 0
-    current_block_offset = 0
+    # 7. Scatter sorted assignments into destination positions
+    sorted_token_ids[dest_idx] = token_indices[sort_perm].to(torch.int32)
+    sorted_weights[dest_idx] = flat_weights[sort_perm]
+    sorted_slot_ids[dest_idx] = slot_ids[sort_perm]
+    valid_mask[dest_idx] = True
 
-    for expert_id in range(num_experts):
-        cnt = int(counts[expert_id].item())
-        if cnt == 0:
-            continue
+    # 8. Map each block to its corresponding expert using searchsorted
+    block_start_positions = torch.arange(num_blocks_ub, device=device) * block_size
+    expert_ids_per_block = torch.searchsorted(padded_end, block_start_positions, right=True).clamp(max=num_experts - 1).to(torch.int32)
 
-        n_blocks = int(blocks_per_expert[expert_id].item())
-        padded_cnt = n_blocks * block_size
-
-        # Find matching items for this expert
-        mask = (flat_expert_ids == expert_id)
-        selected_tokens = token_indices[mask].to(torch.int32)
-        selected_weights = flat_weights[mask]
-        selected_slots = slot_ids[mask]
-
-        # Populate valid tokens
-        valid_slice = slice(current_token_offset, current_token_offset + cnt)
-        sorted_token_ids[valid_slice] = selected_tokens
-        sorted_weights[valid_slice] = selected_weights
-        sorted_slot_ids[valid_slice] = selected_slots
-        valid_mask[valid_slice] = True
-
-        # Padding slots remain 0 with valid_mask=False
-
-        # Record expert ID for all blocks of this expert
-        block_slice = slice(current_block_offset, current_block_offset + n_blocks)
-        expert_ids_per_block[block_slice] = expert_id
-
-        current_token_offset += padded_cnt
-        current_block_offset += n_blocks
+    # Exact post-padded token count preserved as 1-element device tensor
+    num_tokens_post_padded = padded_end[-1:].to(torch.int64)
 
     return AlignedMoEData(
         sorted_token_ids=sorted_token_ids,
@@ -146,8 +129,9 @@ def align_tokens_by_expert(
         sorted_slot_ids=sorted_slot_ids,
         expert_ids_per_block=expert_ids_per_block,
         valid_mask=valid_mask,
-        num_tokens_post_padded=total_padded_tokens,
-        num_blocks=total_blocks,
+        num_tokens_post_padded=num_tokens_post_padded,
+        num_blocks_ub=num_blocks_ub,
+        max_padded_tokens=max_padded,
         block_size=block_size,
         num_tokens=num_tokens,
         top_k=top_k,

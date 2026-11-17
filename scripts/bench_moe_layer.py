@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Benchmark script for single MoE layer inference on Tesla T4 (sm_75).
 
-Compares FOUR implementations:
+Compares FIVE implementations:
   (a) Naive per-expert loop (un-sorted PyTorch loop with boolean indexing)
-  (b) Sorted-token per-expert torch.matmul loop (the fair, optimized PyTorch baseline)
+  (b) Sorted-token per-expert torch.matmul loop (Megablocks-style with per-expert .item() syncs)
+  (b2) Sorted-token per-expert torch.matmul loop with single host sync (offsets.tolist() upfront)
   (c) Fused Triton MoE layer (fused SwiGLU + down projection + deterministic sum)
   (d) Single torch.matmul of equal FLOPs (theoretical cuBLAS roofline)
 
 Features:
-- Shapes read from Qwen MoE config (hidden_size=2048, moe_intermediate_size=1408, E=64, top_k=4)
+- Architectural shapes read from config JSON (defaults to configs/qwen1_5_moe_a2_7b.json).
+  NOTE: The architecture parameters correspond to Qwen1.5-MoE-A2.7B. The user should verify
+  these against the official Hugging Face config (Qwen/Qwen1.5-MoE-A2.7B).
 - FP16 only. Pre-flight check ensures weights + activations fit in 16 GB VRAM.
-- Exact kernel launch counts measured using torch.profiler.
-- 10 warmup + 50 timed iterations using torch.cuda.Event; records median and p95.
-- Single GEMM Triton vs torch.matmul ratio measurement.
-- Outputs both JSON and Markdown result summaries.
+- Accuracy check: verifies Triton layer output against FP32 PyTorch golden reference before timing.
+  Raises RuntimeError and terminates if relative error > 1e-2.
+- Exact CUDA kernel/memset event counts measured using torch.profiler.
+- Per-stage latency breakdown of the Triton path (align, kernel1, kernel2, reduction).
+- Single GEMM Triton vs torch.matmul (cuBLAS) ratio measurement.
+- Outputs detailed JSON and Markdown summaries including driver and environment metadata.
 """
 
 from __future__ import annotations
@@ -21,16 +26,38 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
 
+try:
+    import triton
+    triton_version_str = triton.__version__
+except ImportError:
+    triton = None
+    triton_version_str = "N/A"
+
 from DWDP.adapters.extractor import QwenMoEConfig, parse_qwen_moe_config
 from DWDP.moe.align import align_tokens_by_expert
+from DWDP.moe.kernels import launch_down_proj, launch_fused_swiglu
 from DWDP.moe.layer import triton_moe_layer
+from DWDP.moe.reference import moe_reference_grouped
+
+
+def get_driver_version() -> str:
+    """Retrieve NVIDIA driver version if available."""
+    try:
+        res = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            text=True, stderr=subprocess.DEVNULL
+        ).strip().splitlines()[0]
+        return res
+    except Exception:
+        return "N/A"
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +110,7 @@ def baseline_b_sorted_matmul(
     topk_indices: torch.Tensor,
     topk_weights: torch.Tensor,
 ) -> torch.Tensor:
-    """(b) Sorted-token per-expert torch.matmul loop (the fair Megablocks-style baseline)."""
+    """(b) Sorted-token per-expert torch.matmul loop (repeated .item() host syncs)."""
     num_tokens, hidden_dim = x.shape
     num_experts, double_intermediate_dim, _ = w1.shape
     intermediate_dim = double_intermediate_dim // 2
@@ -97,7 +124,6 @@ def baseline_b_sorted_matmul(
     sorted_expert_ids, sort_perm = torch.sort(flat_expert_ids)
     sorted_tokens = token_indices[sort_perm]
     sorted_weights = flat_weights[sort_perm].unsqueeze(1)
-
     x_sorted = x[sorted_tokens]
     expert_counts = torch.bincount(sorted_expert_ids, minlength=num_experts)
     offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=x.device)
@@ -124,6 +150,62 @@ def baseline_b_sorted_matmul(
         out_sorted[start:end] = down * sorted_weights[start:end]
 
     # Invert permutation and sum top_k contributions
+    out = torch.zeros((num_tokens, hidden_dim), dtype=x.dtype, device=x.device)
+    out.index_add_(0, sorted_tokens, out_sorted)
+    return out
+
+
+def baseline_b2_sorted_matmul_single_sync(
+    x: torch.Tensor,
+    w1: torch.Tensor,
+    w2: torch.Tensor,
+    topk_indices: torch.Tensor,
+    topk_weights: torch.Tensor,
+) -> torch.Tensor:
+    """(b2) Sorted-token per-expert torch.matmul loop (single host sync).
+
+    Copies offsets to CPU once via .tolist(), avoiding 2 * E device-to-host .item() syncs.
+    """
+    num_tokens, hidden_dim = x.shape
+    num_experts, double_intermediate_dim, _ = w1.shape
+    intermediate_dim = double_intermediate_dim // 2
+    top_k = topk_indices.shape[1]
+
+    flat_expert_ids = topk_indices.reshape(-1)
+    flat_weights = topk_weights.reshape(-1)
+    token_indices = torch.arange(num_tokens, device=x.device).repeat_interleave(top_k)
+
+    sorted_expert_ids, sort_perm = torch.sort(flat_expert_ids)
+    sorted_tokens = token_indices[sort_perm]
+    sorted_weights = flat_weights[sort_perm].unsqueeze(1)
+    x_sorted = x[sorted_tokens]
+    expert_counts = torch.bincount(sorted_expert_ids, minlength=num_experts)
+    offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=x.device)
+    offsets[1:] = torch.cumsum(expert_counts, dim=0)
+
+    # Single host-device sync
+    offsets_cpu = offsets.tolist()
+
+    out_sorted = torch.zeros_like(x_sorted)
+
+    for e in range(num_experts):
+        start = offsets_cpu[e]
+        end = offsets_cpu[e + 1]
+        if start == end:
+            continue
+
+        x_e = x_sorted[start:end]
+        w_gate = w1[e, :intermediate_dim, :]
+        w_up = w1[e, intermediate_dim:, :]
+        w_down = w2[e, :, :]
+
+        gate = F.linear(x_e, w_gate)
+        up = F.linear(x_e, w_up)
+        act = F.silu(gate) * up
+        down = F.linear(act, w_down)
+
+        out_sorted[start:end] = down * sorted_weights[start:end]
+
     out = torch.zeros((num_tokens, hidden_dim), dtype=x.dtype, device=x.device)
     out.index_add_(0, sorted_tokens, out_sorted)
     return out
@@ -167,8 +249,8 @@ def measure_cuda_latency(fn: Callable[[], torch.Tensor], warmup: int = 10, timed
     return median_ms, p95_ms
 
 
-def measure_launch_count(fn: Callable[[], torch.Tensor]) -> int:
-    """Count real CUDA kernel launches using torch.profiler."""
+def measure_cuda_event_count(fn: Callable[[], torch.Tensor]) -> int:
+    """Count real CUDA kernel/memset events using torch.profiler."""
     with torch.profiler.profile(
         activities=[torch.profiler.ProfilerActivity.CUDA],
         record_shapes=False,
@@ -176,16 +258,101 @@ def measure_launch_count(fn: Callable[[], torch.Tensor]) -> int:
         fn()
     torch.cuda.synchronize()
 
-    launches = 0
+    events = 0
     for event in prof.events():
         if event.device_type == torch.profiler.DeviceType.CUDA:
-            launches += 1
-    return launches
+            events += 1
+    return events
+
+
+def measure_triton_breakdown(
+    x: torch.Tensor,
+    w1: torch.Tensor,
+    w2: torch.Tensor,
+    topk_indices: torch.Tensor,
+    topk_weights: torch.Tensor,
+    warmup: int = 5,
+    timed: int = 20,
+) -> Dict[str, float]:
+    """Measure per-stage CUDA latency breakdown (ms) of the Triton path."""
+    num_tokens, hidden_dim = x.shape
+    num_experts, double_intermediate_dim, _ = w1.shape
+    intermediate_dim = double_intermediate_dim // 2
+    top_k = topk_indices.shape[1]
+    dtype = x.dtype
+    device = x.device
+
+    for _ in range(warmup):
+        triton_moe_layer(x, w1, w2, topk_indices, topk_weights)
+    torch.cuda.synchronize()
+
+    ev_start = torch.cuda.Event(enable_timing=True)
+    ev_after_align = torch.cuda.Event(enable_timing=True)
+    ev_after_k1 = torch.cuda.Event(enable_timing=True)
+    ev_after_k2 = torch.cuda.Event(enable_timing=True)
+    ev_after_red = torch.cuda.Event(enable_timing=True)
+
+    align_times = []
+    k1_times = []
+    k2_times = []
+    red_times = []
+
+    for _ in range(timed):
+        ev_start.record()
+        aligned = align_tokens_by_expert(topk_indices, topk_weights, num_experts, block_size=32)
+        ev_after_align.record()
+
+        # Zero-sync buffer allocation using static upper bound
+        inter_act = torch.zeros((aligned.max_padded_tokens, intermediate_dim), dtype=dtype, device=device)
+        partial_outputs = torch.zeros((num_tokens * top_k, hidden_dim), dtype=dtype, device=device)
+
+        launch_fused_swiglu(
+            hidden_states=x,
+            w1=w1,
+            inter_act=inter_act,
+            aligned=aligned,
+            hidden_dim=hidden_dim,
+            intermediate_dim=intermediate_dim,
+        )
+        ev_after_k1.record()
+
+        launch_down_proj(
+            inter_act=inter_act,
+            w2=w2,
+            partial_outputs=partial_outputs,
+            aligned=aligned,
+            hidden_dim=hidden_dim,
+            intermediate_dim=intermediate_dim,
+        )
+        ev_after_k2.record()
+
+        _ = partial_outputs.view(num_tokens, top_k, hidden_dim).sum(dim=1)
+        ev_after_red.record()
+        torch.cuda.synchronize()
+
+        align_times.append(ev_start.elapsed_time(ev_after_align))
+        k1_times.append(ev_after_align.elapsed_time(ev_after_k1))
+        k2_times.append(ev_after_k1.elapsed_time(ev_after_k2))
+        red_times.append(ev_after_k2.elapsed_time(ev_after_red))
+
+    align_times.sort()
+    k1_times.sort()
+    k2_times.sort()
+    red_times.sort()
+
+    return {
+        "align_ms": align_times[len(align_times) // 2],
+        "kernel1_ms": k1_times[len(k1_times) // 2],
+        "kernel2_ms": k2_times[len(k2_times) // 2],
+        "reduction_ms": red_times[len(red_times) // 2],
+    }
 
 
 def measure_single_gemm_ratio(m: int, k: int, n: int, device: torch.device) -> Tuple[float, float, float]:
     """Measure single GEMM latency: Triton vs torch.matmul (cuBLAS)."""
-    import triton
+    if triton is None:
+        return 0.0, 0.0, 1.0
+
     import triton.language as tl
 
     @triton.autotune(
@@ -237,20 +404,41 @@ def measure_single_gemm_ratio(m: int, k: int, n: int, device: torch.device) -> T
 # Main Benchmark Runner
 # ---------------------------------------------------------------------------
 
-def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
+def run_benchmark(
+    config_path: str = "configs/qwen1_5_moe_a2_7b.json",
+    small_model: bool = False,
+    output_dir: str = "benchmarks/results/t4_fused_moe",
+) -> None:
     cuda_available = torch.cuda.is_available()
 
-    # Read shapes from real Qwen1.5-MoE config
-    raw_config = {
-        "hidden_size": 2048,
-        "moe_intermediate_size": 1408,
-        "num_experts": 64,
-        "top_k": 4,
-        "num_layers": 24,
-        "num_kv_heads": 16,
-        "head_dim": 128,
-    }
-    cfg: QwenMoEConfig = parse_qwen_moe_config(raw_config)
+    # NOTE: The architecture parameters here correspond to Qwen1.5-MoE-A2.7B.
+    # The user should verify these against the official Hugging Face config (Qwen/Qwen1.5-MoE-A2.7B).
+    if small_model:
+        raw_config = {
+            "hidden_size": 64,
+            "moe_intermediate_size": 32,
+            "num_experts": 8,
+            "top_k": 2,
+            "num_layers": 2,
+            "num_kv_heads": 2,
+            "head_dim": 32,
+        }
+        cfg: QwenMoEConfig = parse_qwen_moe_config(raw_config)
+    else:
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                raw_config = json.load(f)
+        else:
+            raw_config = {
+                "hidden_size": 2048,
+                "moe_intermediate_size": 1408,
+                "num_experts": 64,
+                "top_k": 4,
+                "num_layers": 24,
+                "num_kv_heads": 16,
+                "head_dim": 128,
+            }
+        cfg = parse_qwen_moe_config(raw_config)
 
     H = cfg.hidden_size
     I = cfg.moe_intermediate_size
@@ -258,13 +446,19 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
     K = cfg.top_k
     dtype = torch.float16
 
-    token_counts = [1, 8, 64, 512, 4096]
+    token_counts = [1, 8, 64, 512, 4096] if not small_model else [1, 8, 16]
 
-    print("=" * 70)
+    driver_version = get_driver_version()
+    cuda_version = getattr(torch.version, "cuda", "N/A")
+
+    print("=" * 80)
     print("DWDP FUSED TRITON MoE LAYER BENCHMARK (TESLA T4 / sm_75)")
-    print("=" * 70)
+    print("=" * 80)
     print(f"Model Shapes: hidden_dim={H}, moe_intermediate_dim={I}, num_experts={E}, top_k={K}")
     print(f"Data Type: {dtype}")
+    print(f"PyTorch Version: {torch.__version__} (CUDA {cuda_version})")
+    print(f"Triton Version: {triton_version_str}")
+    print(f"NVIDIA Driver Version: {driver_version}")
 
     if not cuda_available:
         print("\n[WARNING] CUDA is NOT available on this system.")
@@ -278,8 +472,10 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
         skeleton_data = {
             "device": "TBD (run on T4)",
             "compute_capability": "7.5 (TBD)",
+            "driver_version": "TBD (run on T4)",
             "torch_version": torch.__version__,
-            "triton_version": "TBD",
+            "torch_cuda_version": cuda_version,
+            "triton_version": triton_version_str,
             "status": "AWAITING_GPU_EXECUTION",
             "token_counts": token_counts,
         }
@@ -290,11 +486,11 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
 
 *Status: Awaiting GPU Execution on Tesla T4*
 
-| Tokens (T) | Naive Loop (a) | Sorted Matmul (b) | Triton Path (c) | Roofline cuBLAS (d) | Real Launches (c) | Speedup vs (b) |
-|---|---|---|---|---|---|---|
+| Tokens (T) | Naive Loop (a) | Sorted Loop (b) | Sorted Single-Sync (b2) | Triton Path (c) | Roofline cuBLAS (d) | CUDA Events (c) | Rel Err vs Ref | Speedup vs (b2) |
+|---|---|---|---|---|---|---|---|---|
 """
         for t in token_counts:
-            md_content += f"| {t} | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) |\n"
+            md_content += f"| {t} | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) | TBD (run on T4) |\n"
 
         with open(md_path, "w") as f:
             f.write(md_content)
@@ -348,55 +544,85 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
 
     results: List[Dict] = []
 
-    print("-" * 70)
-    print(f"{'T':<6} | {'Naive (a) ms':<12} | {'Sorted (b) ms':<13} | {'Triton (c) ms':<13} | {'cuBLAS (d) ms':<13} | {'Launches (c)':<12}")
-    print("-" * 70)
+    print("-" * 115)
+    print(f"{'T':<6} | {'Naive (a)':<11} | {'Sorted (b)':<11} | {'Sync (b2)':<11} | {'Triton (c)':<11} | {'cuBLAS (d)':<11} | {'Events (c)':<11} | {'Rel Err':<9} | {'Speedup (b2)':<12}")
+    print("-" * 115)
 
     for T in token_counts:
+        torch.manual_seed(100 + T)
         x = torch.randn(T, H, dtype=dtype, device=device)
         topk_indices = torch.randint(0, E, (T, K), dtype=torch.int64, device=device)
         topk_weights = torch.softmax(torch.randn(T, K, device=device), dim=-1).half()
+
+        # Accuracy verification before timing: compare Triton against FP32 golden reference
+        triton_out = baseline_c_triton(x, w1, w2, topk_indices, topk_weights)
+        ref_fp32 = moe_reference_grouped(
+            x.float(), w1.float(), w2.float(), topk_indices, topk_weights.float()
+        )
+        diff = triton_out.float() - ref_fp32.float()
+        ref_norm = torch.linalg.norm(ref_fp32.float()).item()
+        rel_err = (torch.linalg.norm(diff).item() / ref_norm) if ref_norm > 0 else 0.0
+
+        if rel_err > 1e-2:
+            raise RuntimeError(
+                f"Triton layer output relative error ({rel_err:.6e}) exceeds 1e-2 "
+                f"against FP32 PyTorch reference at T={T}!"
+            )
 
         # (a) Naive per-expert loop
         naive_fn = lambda: baseline_a_naive_loop(x, w1, w2, topk_indices, topk_weights)
         naive_med, naive_p95 = measure_cuda_latency(naive_fn)
 
-        # (b) Sorted-token per-expert matmul
+        # (b) Sorted-token per-expert matmul (with per-expert item syncs)
         sorted_fn = lambda: baseline_b_sorted_matmul(x, w1, w2, topk_indices, topk_weights)
         sorted_med, sorted_p95 = measure_cuda_latency(sorted_fn)
+
+        # (b2) Sorted-token per-expert matmul (single host sync)
+        sorted_b2_fn = lambda: baseline_b2_sorted_matmul_single_sync(x, w1, w2, topk_indices, topk_weights)
+        sorted_b2_med, sorted_b2_p95 = measure_cuda_latency(sorted_b2_fn)
 
         # (c) Triton fused MoE layer
         triton_fn = lambda: baseline_c_triton(x, w1, w2, topk_indices, topk_weights)
         triton_med, triton_p95 = measure_cuda_latency(triton_fn)
-        triton_launches = measure_launch_count(triton_fn)
+        triton_events = measure_cuda_event_count(triton_fn)
 
         # (d) Roofline equal-FLOPs single matmul
-        # Total MoE FLOPs = 6 * T * K * H * I
-        # Equivalent single GEMM: [T * K, H] @ [H, 3 * I] has 2 * (T * K) * H * (3 * I) = 6 * T * K * H * I FLOPs!
         roofline_a = torch.randn(T * K, H, dtype=dtype, device=device)
         roofline_b = torch.randn(H, 3 * I, dtype=dtype, device=device)
         roofline_fn = lambda: torch.matmul(roofline_a, roofline_b)
         roofline_med, roofline_p95 = measure_cuda_latency(roofline_fn)
 
-        speedup_vs_sorted = sorted_med / max(triton_med, 1e-6)
+        # Triton per-stage breakdown
+        breakdown = measure_triton_breakdown(x, w1, w2, topk_indices, topk_weights)
 
-        print(f"{T:<6} | {naive_med:<12.3f} | {sorted_med:<13.3f} | {triton_med:<13.3f} | {roofline_med:<13.3f} | {triton_launches:<12}")
+        speedup_vs_b = sorted_med / max(triton_med, 1e-6)
+        speedup_vs_b2 = sorted_b2_med / max(triton_med, 1e-6)
+
+        print(
+            f"{T:<6} | {naive_med:<11.3f} | {sorted_med:<11.3f} | {sorted_b2_med:<11.3f} | "
+            f"{triton_med:<11.3f} | {roofline_med:<11.3f} | {triton_events:<11} | {rel_err:<9.2e} | {speedup_vs_b2:<12.2f}x"
+        )
 
         results.append({
             "num_tokens": T,
+            "reference_relative_error": rel_err,
             "naive_loop_ms": naive_med,
             "naive_loop_p95_ms": naive_p95,
             "sorted_matmul_ms": sorted_med,
             "sorted_matmul_p95_ms": sorted_p95,
+            "sorted_matmul_b2_ms": sorted_b2_med,
+            "sorted_matmul_b2_p95_ms": sorted_b2_p95,
             "triton_ms": triton_med,
             "triton_p95_ms": triton_p95,
             "roofline_cublas_ms": roofline_med,
             "roofline_cublas_p95_ms": roofline_p95,
-            "triton_cuda_launches": triton_launches,
-            "speedup_vs_sorted": speedup_vs_sorted,
+            "cuda_kernel_memset_events": triton_events,
+            "speedup_vs_sorted_b": speedup_vs_b,
+            "speedup_vs_sorted_b2": speedup_vs_b2,
+            "breakdown_ms": breakdown,
         })
 
-    print("-" * 70)
+    print("-" * 115)
 
     # 4. Save results to output_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -406,8 +632,12 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
     summary_payload = {
         "gpu_name": device_name,
         "compute_capability": cc_str,
+        "driver_version": driver_version,
         "torch_version": torch.__version__,
+        "torch_cuda_version": cuda_version,
+        "triton_version": triton_version_str,
         "total_vram_gb": total_mem_gb,
+        "config_path": config_path,
         "shapes": {
             "hidden_dim": H,
             "moe_intermediate_dim": I,
@@ -427,18 +657,38 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
         "# DWDP Fused MoE Layer Benchmark Results (Tesla T4)",
         "",
         f"- **GPU**: {device_name} (SM {cc_str})",
-        f"- **PyTorch**: {torch.__version__}",
+        f"- **Driver Version**: {driver_version}",
+        f"- **PyTorch**: {torch.__version__} (CUDA {cuda_version})",
+        f"- **Triton**: {triton_version_str}",
         f"- **Shapes**: Hidden={H}, Intermediate={I}, Experts={E}, Top-k={K}, Dtype=float16",
         f"- **Single GEMM Ratio (Triton/cuBLAS)**: {gemm_ratio:.2f}x",
         "",
-        "| Tokens (T) | Naive Loop (a) | Sorted Matmul (b) | Triton Path (c) | Roofline cuBLAS (d) | Launches (c) | Speedup vs (b) |",
-        "|---|---|---|---|---|---|---|",
+        "## Overall Latency & Scaling",
+        "",
+        "| Tokens (T) | Naive Loop (a) | Sorted Loop (b) | Sorted Single-Sync (b2) | Triton Path (c) | Roofline cuBLAS (d) | CUDA Kernel/Memset Events (c) | Rel Err vs Ref | Speedup vs (b2) |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
 
     for r in results:
         md_lines.append(
             f"| {r['num_tokens']} | {r['naive_loop_ms']:.3f} ms | {r['sorted_matmul_ms']:.3f} ms | "
-            f"**{r['triton_ms']:.3f} ms** | {r['roofline_cublas_ms']:.3f} ms | {r['triton_cuda_launches']} | **{r['speedup_vs_sorted']:.2f}x** |"
+            f"{r['sorted_matmul_b2_ms']:.3f} ms | **{r['triton_ms']:.3f} ms** | {r['roofline_cublas_ms']:.3f} ms | "
+            f"{r['cuda_kernel_memset_events']} | {r['reference_relative_error']:.2e} | **{r['speedup_vs_sorted_b2']:.2f}x** |"
+        )
+
+    md_lines.extend([
+        "",
+        "## Triton Path Stage Breakdown (CUDA Events)",
+        "",
+        "| Tokens (T) | Alignment (ms) | Kernel 1 SwiGLU (ms) | Kernel 2 Down (ms) | Reduction (ms) | Total Triton (ms) |",
+        "|---|---|---|---|---|---|",
+    ])
+
+    for r in results:
+        b = r["breakdown_ms"]
+        md_lines.append(
+            f"| {r['num_tokens']} | {b['align_ms']:.3f} ms | {b['kernel1_ms']:.3f} ms | "
+            f"{b['kernel2_ms']:.3f} ms | {b['reduction_ms']:.3f} ms | **{r['triton_ms']:.3f} ms** |"
         )
 
     with open(report_md_path, "w") as f:
@@ -451,6 +701,26 @@ def run_benchmark(output_dir: str = "benchmarks/results/t4_fused_moe") -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run DWDP MoE layer benchmark.")
-    parser.add_argument("--output-dir", type=str, default="benchmarks/results/t4_fused_moe", help="Output directory")
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="benchmarks/results/t4_fused_moe",
+        help="Output directory for benchmark reports",
+    )
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/qwen1_5_moe_a2_7b.json",
+        help="Path to MoE architectural config JSON (defaults to configs/qwen1_5_moe_a2_7b.json)",
+    )
+    parser.add_argument(
+        "--small-model",
+        action="store_true",
+        help="Use small model dimensions (H=64, I=32, E=8, K=2) for fast local/CPU verification",
+    )
     args = parser.parse_args()
-    run_benchmark(output_dir=args.output_dir)
+    run_benchmark(
+        config_path=args.config,
+        small_model=args.small_model,
+        output_dir=args.output_dir,
+    )

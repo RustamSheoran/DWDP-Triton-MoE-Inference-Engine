@@ -53,17 +53,17 @@ def triton_moe_layer(
     if num_tokens == 0:
         return torch.zeros((0, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device)
 
-    # 1. Align & group tokens by expert with block_m padding
+    # 1. Align & group tokens by expert with block_m padding (zero host sync)
     aligned = align_tokens_by_expert(topk_indices, topk_weights, num_experts, block_size=block_m)
 
-    if aligned.num_blocks == 0:
+    if aligned.num_blocks_ub == 0:
         return torch.zeros((num_tokens, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device)
 
     device = hidden_states.device
     dtype = hidden_states.dtype
 
-    # 2. Preallocate intermediate activations and slot output buffers
-    inter_act = torch.zeros((aligned.num_tokens_post_padded, intermediate_dim), dtype=dtype, device=device)
+    # 2. Preallocate intermediate activations and slot output buffers using static upper bound
+    inter_act = torch.zeros((aligned.max_padded_tokens, intermediate_dim), dtype=dtype, device=device)
     partial_outputs = torch.zeros((num_tokens * top_k, hidden_dim), dtype=dtype, device=device)
 
     # 3. Kernel 1: Fused Gate+Up GEMM with SwiGLU activation

@@ -5,6 +5,7 @@ Features:
 - Fused Down GEMM: (act @ W_down^T) * routing_weight, written directly to slot buffer.
 - Autotuned over valid SM 75 configurations (FP16 Tensor Cores, 2-stage pipelines, no TMA/FP8).
 - CPU-safe execution under TRITON_INTERPRET=1.
+- Zero-synchronization grid execution using static upper bounds and dynamic early exit.
 """
 
 from __future__ import annotations
@@ -73,6 +74,7 @@ if triton is not None:
         sorted_token_ids_ptr,
         expert_ids_per_block_ptr,
         valid_mask_ptr,
+        num_tokens_post_padded_ptr,
         hidden_dim: tl.constexpr,
         intermediate_dim: tl.constexpr,
         BLOCK_M: tl.constexpr,
@@ -81,9 +83,14 @@ if triton is not None:
     ):
         """Compute silu(x @ W_gate^T) * (x @ W_up^T) for a block of tokens."""
         pid_m = tl.program_id(axis=0)
+        # Early exit for blocks exceeding exact post-padded token count
+        if pid_m * BLOCK_M >= tl.load(num_tokens_post_padded_ptr):
+            return
+
         pid_n = tl.program_id(axis=1)
 
-        expert_id = tl.load(expert_ids_per_block_ptr + pid_m)
+        # Cast expert_id to int64 for safe 64-bit pointer arithmetic
+        expert_id = tl.load(expert_ids_per_block_ptr + pid_m).to(tl.int64)
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_k = tl.arange(0, BLOCK_K)
@@ -143,6 +150,7 @@ if triton is not None:
         sorted_weights_ptr,
         expert_ids_per_block_ptr,
         valid_mask_ptr,
+        num_tokens_post_padded_ptr,
         hidden_dim: tl.constexpr,
         intermediate_dim: tl.constexpr,
         BLOCK_M: tl.constexpr,
@@ -151,9 +159,14 @@ if triton is not None:
     ):
         """Compute (inter @ W_down^T) * routing_weight and write to slot buffer."""
         pid_m = tl.program_id(axis=0)
+        # Early exit for blocks exceeding exact post-padded token count
+        if pid_m * BLOCK_M >= tl.load(num_tokens_post_padded_ptr):
+            return
+
         pid_n = tl.program_id(axis=1)
 
-        expert_id = tl.load(expert_ids_per_block_ptr + pid_m)
+        # Cast expert_id to int64 for safe 64-bit pointer arithmetic
+        expert_id = tl.load(expert_ids_per_block_ptr + pid_m).to(tl.int64)
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_k = tl.arange(0, BLOCK_K)
@@ -200,15 +213,11 @@ def launch_fused_swiglu(
     block_k: int = 32,
 ) -> None:
     """Launch Kernel 1: Fused SwiGLU GEMM."""
-    if aligned.num_blocks == 0:
+    if aligned.num_blocks_ub == 0:
         return
 
-    grid = (
-        aligned.num_blocks,
-        triton.cdiv(intermediate_dim, block_n) if _is_interpret_or_cpu() else triton.cdiv(intermediate_dim, 32),
-    )
-
     if _is_interpret_or_cpu():
+        grid = (aligned.num_blocks_ub, triton.cdiv(intermediate_dim, block_n))
         _fused_swiglu_kernel[grid](
             hidden_states,
             w1,
@@ -216,6 +225,7 @@ def launch_fused_swiglu(
             aligned.sorted_token_ids,
             aligned.expert_ids_per_block,
             aligned.valid_mask,
+            aligned.num_tokens_post_padded,
             hidden_dim=hidden_dim,
             intermediate_dim=intermediate_dim,
             BLOCK_M=aligned.block_size,
@@ -223,6 +233,7 @@ def launch_fused_swiglu(
             BLOCK_K=block_k,
         )
     else:
+        grid = lambda META: (aligned.num_blocks_ub, triton.cdiv(intermediate_dim, META["BLOCK_N"]))
         _fused_swiglu_kernel[grid](
             hidden_states,
             w1,
@@ -230,6 +241,7 @@ def launch_fused_swiglu(
             aligned.sorted_token_ids,
             aligned.expert_ids_per_block,
             aligned.valid_mask,
+            aligned.num_tokens_post_padded,
             hidden_dim=hidden_dim,
             intermediate_dim=intermediate_dim,
             BLOCK_M=aligned.block_size,
@@ -247,15 +259,11 @@ def launch_down_proj(
     block_k: int = 32,
 ) -> None:
     """Launch Kernel 2: Down projection with routing-weight scaling."""
-    if aligned.num_blocks == 0:
+    if aligned.num_blocks_ub == 0:
         return
 
-    grid = (
-        aligned.num_blocks,
-        triton.cdiv(hidden_dim, block_n) if _is_interpret_or_cpu() else triton.cdiv(hidden_dim, 32),
-    )
-
     if _is_interpret_or_cpu():
+        grid = (aligned.num_blocks_ub, triton.cdiv(hidden_dim, block_n))
         _down_proj_kernel[grid](
             inter_act,
             w2,
@@ -264,6 +272,7 @@ def launch_down_proj(
             aligned.sorted_weights,
             aligned.expert_ids_per_block,
             aligned.valid_mask,
+            aligned.num_tokens_post_padded,
             hidden_dim=hidden_dim,
             intermediate_dim=intermediate_dim,
             BLOCK_M=aligned.block_size,
@@ -271,6 +280,7 @@ def launch_down_proj(
             BLOCK_K=block_k,
         )
     else:
+        grid = lambda META: (aligned.num_blocks_ub, triton.cdiv(hidden_dim, META["BLOCK_N"]))
         _down_proj_kernel[grid](
             inter_act,
             w2,
@@ -279,6 +289,7 @@ def launch_down_proj(
             aligned.sorted_weights,
             aligned.expert_ids_per_block,
             aligned.valid_mask,
+            aligned.num_tokens_post_padded,
             hidden_dim=hidden_dim,
             intermediate_dim=intermediate_dim,
             BLOCK_M=aligned.block_size,

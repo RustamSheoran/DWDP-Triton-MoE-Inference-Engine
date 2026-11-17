@@ -1,0 +1,11 @@
+{
+  "_comment": "Architectural config for Qwen1.5-MoE-A2.7B. Verify against Hugging Face Qwen/Qwen1.5-MoE-A2.7B config.json.",
+  "model_type": "qwen2_moe",
+  "hidden_size": 2048,
+  "moe_intermediate_size": 1408,
+  "num_experts": 64,
+  "top_k": 4,
+  "num_layers": 24,
+  "num_kv_heads": 16,
+  "head_dim": 128
+}
