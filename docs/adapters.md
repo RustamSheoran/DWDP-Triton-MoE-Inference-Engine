@@ -166,17 +166,7 @@ The harness is intended for:
 
 ## Benchmarking
 
-`benchmarks/runtime/benchmark_hf_adapter.py` is a reference benchmark scaffold for comparing native Hugging Face and DWDP-patched generation.
-
-It is designed to measure:
-
-- latency
-- tokens/sec
-- first-token latency
-- memory
-- module timings
-
-The benchmark is not executed as part of implementation.
+Benchmarking harnesses measure latency, tokens/sec, and memory.
 
 ## Future Adapter Implementation
 
