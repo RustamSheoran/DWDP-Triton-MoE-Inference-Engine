@@ -117,7 +117,7 @@ def align_tokens_by_expert(
     sorted_token_ids[dest_idx] = token_indices[sort_perm].to(torch.int32)
     sorted_weights[dest_idx] = flat_weights[sort_perm]
     sorted_slot_ids[dest_idx] = slot_ids[sort_perm]
-    valid_mask[dest_idx] = True
+    valid_mask[dest_idx] = torch.ones_like(dest_idx, dtype=torch.bool)
 
     # 8. Map each block to its corresponding expert using searchsorted
     block_start_positions = torch.arange(num_blocks_ub, device=device) * block_size
