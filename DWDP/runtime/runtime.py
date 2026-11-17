@@ -59,10 +59,6 @@ class DWDPRuntime(nn.Module):
                 torch.backends.cuda.enable_mem_efficient_sdp(True)
                 torch.backends.cuda.enable_math_sdp(True)
 
-        # Wire Hardcore Kernels (NVFP4 Packing)
-        from DWDP.executor.kernels.fp4_packing import unpack_nvfp4_weights
-
-        self.unpack_nvfp4_weights = unpack_nvfp4_weights
 
     @classmethod
     def build_reference(
