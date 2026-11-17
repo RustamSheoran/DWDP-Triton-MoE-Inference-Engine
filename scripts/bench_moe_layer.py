@@ -302,14 +302,8 @@ def measure_triton_breakdown(
         aligned = align_tokens_by_expert(topk_indices, topk_weights, num_experts, block_size=32)
         ev_after_align.record()
 
-        # Buffer allocation
-        num_post_padded = aligned.num_tokens_post_padded
-        if isinstance(num_post_padded, torch.Tensor):
-            num_padded_val = int(num_post_padded.item())
-        else:
-            num_padded_val = int(num_post_padded)
-
-        inter_act = torch.zeros((num_padded_val, intermediate_dim), dtype=dtype, device=device)
+        # Zero-sync buffer allocation using static upper bound
+        inter_act = torch.zeros((aligned.max_padded_tokens, intermediate_dim), dtype=dtype, device=device)
         partial_outputs = torch.zeros((num_tokens * top_k, hidden_dim), dtype=dtype, device=device)
 
         launch_fused_swiglu(
