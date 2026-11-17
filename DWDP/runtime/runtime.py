@@ -59,11 +59,9 @@ class DWDPRuntime(nn.Module):
                 torch.backends.cuda.enable_mem_efficient_sdp(True)
                 torch.backends.cuda.enable_math_sdp(True)
 
-        # Wire Hardcore Kernels (FP8 Micro-Scaling, NVFP4 Packing)
+        # Wire Hardcore Kernels (NVFP4 Packing)
         from DWDP.executor.kernels.fp4_packing import unpack_nvfp4_weights
-        from DWDP.executor.kernels.fp8_microscaling import fp8_microscaled_gemm
 
-        self.fp8_microscaled_gemm = fp8_microscaled_gemm
         self.unpack_nvfp4_weights = unpack_nvfp4_weights
 
     @classmethod
