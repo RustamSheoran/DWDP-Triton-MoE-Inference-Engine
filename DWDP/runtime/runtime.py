@@ -7,7 +7,6 @@ import torch
 from torch import nn
 
 from DWDP.adapters import BaseModelAdapter, build_adapter, get_adapter_class
-from DWDP.comms_planner import CommunicationPlannerConfig, build_communication_planner
 from DWDP.dispatcher import DispatcherConfig, build_dispatcher
 from DWDP.executor import ExecutorConfig, ExpertRegistry, build_executor
 from DWDP.merger import MergerConfig, build_merger
@@ -18,7 +17,6 @@ from .config import RuntimeConfig
 from .context import RuntimeContext
 from .correctness import CorrectnessReport, compare_tensors
 from .cuda_graph import CUDAGraphRunner
-from .paged_attention import PagedKVCacheManager
 from .pipeline import RuntimePipelineOutput
 from .profiler import RuntimeProfiler
 from .registry import register_runtime
@@ -33,7 +31,6 @@ class DWDPRuntime(nn.Module):
         router: nn.Module,
         dispatcher: nn.Module,
         scheduler: nn.Module,
-        comms_planner: nn.Module,
         executor: nn.Module,
         merger: nn.Module,
         config: RuntimeConfig | None = None,
@@ -44,16 +41,11 @@ class DWDPRuntime(nn.Module):
         self.router = router
         self.dispatcher = dispatcher
         self.scheduler = scheduler
-        self.comms_planner = comms_planner
         self.executor = executor
         self.merger = merger
         self.adapter = adapter
         self.context = RuntimeContext.from_config(self.config)
         self.graph_runner = CUDAGraphRunner(self)
-        # Attention/KV ownership remains with the caller or Hugging Face model.
-        # The previous placeholder eagerly reserved a hard-coded 8 GiB cache
-        # even though no runtime path consumed it.
-        self.paged_kv_manager: PagedKVCacheManager | None = None
 
         # Enable FlashAttention SDPA & TF32 Tensor Cores
         if torch.cuda.is_available():
@@ -64,14 +56,6 @@ class DWDPRuntime(nn.Module):
                 torch.backends.cuda.enable_mem_efficient_sdp(True)
                 torch.backends.cuda.enable_math_sdp(True)
 
-        # Wire Hardcore Kernels (MLA Absorption, FP8 Micro-Scaling, NVFP4 Packing)
-        from DWDP.executor.kernels.fp4_packing import unpack_nvfp4_weights
-        from DWDP.executor.kernels.fp8_microscaling import fp8_microscaled_gemm
-        from DWDP.executor.kernels.mla_absorption import absorb_mla_weights
-
-        self.absorb_mla_weights = absorb_mla_weights
-        self.fp8_microscaled_gemm = fp8_microscaled_gemm
-        self.unpack_nvfp4_weights = unpack_nvfp4_weights
 
     @classmethod
     def build_reference(
@@ -116,20 +100,6 @@ class DWDPRuntime(nn.Module):
                     metadata_level=SchedulerMetadataLevel.MINIMAL,
                     enable_dependency_metadata=False,
                     enable_barrier_metadata=False,
-                )
-            ),
-            comms_planner=build_communication_planner(
-                CommunicationPlannerConfig(
-                    planner_policy=runtime_config.communication_policy,
-                    deterministic=runtime_config.deterministic,
-                    enable_workspace=runtime_config.enable_workspace,
-                    world_size=runtime_config.world_size,
-                    local_rank=runtime_config.local_rank,
-                    enable_prefetch_metadata=False,
-                    enable_overlap_metadata=False,
-                    enable_topology_metadata=False,
-                    enable_cost_model=False,
-                    enable_statistics=False,
                 )
             ),
             executor=build_executor(
@@ -207,15 +177,10 @@ class DWDPRuntime(nn.Module):
                 dispatch_plan,
                 workspace=workspaces.scheduler if workspaces is not None else None,
             )
-            communication_plan = self.comms_planner(
-                execution_plan,
-                workspace=workspaces.comms if workspaces is not None else None,
-            )
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
             merger_output = self.merger(
@@ -226,7 +191,6 @@ class DWDPRuntime(nn.Module):
                 router_output=router_output,
                 dispatch_plan=dispatch_plan,
                 execution_plan=execution_plan,
-                communication_plan=communication_plan,
                 executor_output=executor_output,
                 merger_output=merger_output,
                 profile=None,
@@ -244,17 +208,11 @@ class DWDPRuntime(nn.Module):
                 dispatch_plan,
                 workspace=workspaces.scheduler if workspaces is not None else None,
             )
-        with profiler.record("comms_planner"):
-            communication_plan = self.comms_planner(
-                execution_plan,
-                workspace=workspaces.comms if workspaces is not None else None,
-            )
         with profiler.record("executor"):
             executor_output = self.executor(
                 hidden_states,
                 dispatch_plan,
                 execution_plan,
-                communication_plan,
                 workspace=workspaces.executor if workspaces is not None else None,
             )
         with profiler.record("merger"):
@@ -268,7 +226,6 @@ class DWDPRuntime(nn.Module):
             router_output=router_output,
             dispatch_plan=dispatch_plan,
             execution_plan=execution_plan,
-            communication_plan=communication_plan,
             executor_output=executor_output,
             merger_output=merger_output,
             profile=profiler.finish(workspace_bytes=workspace_bytes),
@@ -291,7 +248,6 @@ class DWDPRuntime(nn.Module):
         self.router = torch.compile(self.router)
         self.dispatcher = torch.compile(self.dispatcher)
         self.scheduler = torch.compile(self.scheduler)
-        self.comms_planner = torch.compile(self.comms_planner)
         self.executor = torch.compile(self.executor)
         self.merger = torch.compile(self.merger)
         return self

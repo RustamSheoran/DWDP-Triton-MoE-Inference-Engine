@@ -54,10 +54,6 @@ def make_executor_output(
             expert_starts=torch.empty(0, dtype=torch.int64, device=device),
             expert_ends=torch.empty(0, dtype=torch.int64, device=device),
             stream_assignments=torch.empty(0, dtype=torch.int64, device=device),
-            communication_remote_expert_ids=torch.empty(
-                0, dtype=torch.int64, device=device
-            ),
-            communication_policy="static",
             scheduling_policy="round_robin",
         ),
         statistics=ExecutionStatistics(

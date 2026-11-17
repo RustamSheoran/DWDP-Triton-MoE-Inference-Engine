@@ -278,10 +278,6 @@ Key FP8 implementation files & features:
 - **Storage Conversion**: [`convert_qwen_weights_to_fp8_once()`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py#L17) in [fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py) converts parameter storage in place while computing per-expert fine-grained scaling maps (`scale_map`), keeping `TensorList` pointer-array layouts unchanged.
 - **Single-Pass Workspace Quantization**: [`quantize_activations_once()`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py#L54) in [fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/fp8.py) quantizes inputs into workspace-allocated FP8 buffers once per forward pass while computing per-token/per-tensor scale factors (`scale_out`).
 - **Micro-Scale Dequantization in Triton Kernels**: Dedicated FP8 kernels [`_persistent_fp8_gather_swiglu`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py#L126) and [`_persistent_fp8_down_route_store`](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py#L218) in [kernels/fp8.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/executor/kernels/fp8.py) load scaling pointers from `quantization_ptrs`, accumulate dot products in FP32, and apply fine-grained scale factor dequantization before activation functions and output stores.
-- **Benchmarking & Profiling**: See [BENCHMARK_GUIDE.md](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/docs/BENCHMARK_GUIDE.md) and [run_all_benchmarks.sh](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/scripts/run_all_benchmarks.sh).
-
-
-
 ## Distributed Execution
 
 The current backend rejects remote experts. Distributed execution will require a backend that consumes populated `CommunicationPlan` descriptors.

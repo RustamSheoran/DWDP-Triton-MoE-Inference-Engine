@@ -4,8 +4,6 @@ from dataclasses import dataclass
 
 import torch
 
-from DWDP.communication import CudaStreams
-from DWDP.comms_planner import CommunicationPlannerWorkspace
 from DWDP.dispatcher import DispatchWorkspace
 from DWDP.executor import ExecutorWorkspace
 from DWDP.merger import MergerWorkspace
@@ -20,7 +18,6 @@ class RuntimeWorkspaces:
 
     dispatch: DispatchWorkspace
     scheduler: SchedulerWorkspace
-    comms: CommunicationPlannerWorkspace
     executor: ExecutorWorkspace
     merger: MergerWorkspace
 
@@ -31,7 +28,6 @@ class RuntimeWorkspaces:
         return cls(
             dispatch=DispatchWorkspace(),
             scheduler=SchedulerWorkspace(),
-            comms=CommunicationPlannerWorkspace(),
             executor=ExecutorWorkspace(),
             merger=MergerWorkspace(),
         )
@@ -42,7 +38,6 @@ class RuntimeWorkspaces:
         return (
             self.dispatch.estimated_bytes()
             + self.scheduler.estimated_bytes()
-            + self.comms.estimated_bytes()
             + self.executor.estimated_bytes()
             + self.merger.estimated_bytes()
         )
@@ -54,7 +49,6 @@ class RuntimeContext:
 
     config: RuntimeConfig
     workspaces: RuntimeWorkspaces | None = None
-    streams: CudaStreams | None = None
 
     @classmethod
     def from_config(cls, config: RuntimeConfig) -> "RuntimeContext":
@@ -63,11 +57,8 @@ class RuntimeContext:
         return cls(
             config=config,
             workspaces=RuntimeWorkspaces.create() if config.enable_workspace else None,
-            streams=CudaStreams(enabled=config.enable_cuda_streams),
         )
 
     def prepare_for(self, device: torch.device | str) -> None:
         """Initialize device-local runtime resources needed for a forward pass."""
-
-        if self.streams is not None:
-            self.streams.ensure(device)
+        pass

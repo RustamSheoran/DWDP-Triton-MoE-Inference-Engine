@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import torch
 
-from DWDP.comms_planner.metadata import CommunicationPlan
 from DWDP.dispatcher.plan import DispatchPlan
 from DWDP.scheduler.execution import ExecutionPlan
 
@@ -23,7 +22,6 @@ def validate_executor_inputs(
     flat_hidden_states: torch.Tensor,
     dispatch_plan: DispatchPlan,
     execution_plan: ExecutionPlan,
-    communication_plan: CommunicationPlan,
 ) -> None:
     """Validate finalized planning contracts before execution."""
 
@@ -59,11 +57,6 @@ def validate_executor_inputs(
             )
         if tensor.dtype != torch.int64:
             raise ValueError("ExecutionPlan tensors must be int64")
-
-    if communication_plan.remote_expert_ids.numel() > 0:
-        raise NotImplementedError(
-            "PyTorchExecutor reference backend only supports local experts"
-        )
 
 
 def estimate_tensor_bytes(tensor: torch.Tensor | None) -> int:

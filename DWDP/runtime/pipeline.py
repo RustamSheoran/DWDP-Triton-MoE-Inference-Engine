@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from DWDP.comms_planner import CommunicationPlan
 from DWDP.dispatcher import DispatchPlan
 from DWDP.executor import ExecutorOutput
 from DWDP.merger import MergerOutput
@@ -19,7 +18,6 @@ class RuntimePipelineOutput:
     router_output: RouterOutput
     dispatch_plan: DispatchPlan
     execution_plan: ExecutionPlan
-    communication_plan: CommunicationPlan
     executor_output: ExecutorOutput
     merger_output: MergerOutput
     profile: RuntimeProfile | None = None

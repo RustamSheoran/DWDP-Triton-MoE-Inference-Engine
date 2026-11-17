@@ -16,8 +16,6 @@ class WeightFormat(str, Enum):
     FP16 = "fp16"
     BF16 = "bf16"
     FP32 = "fp32"
-    FP8 = "fp8"
-    INT4 = "int4"
     UNKNOWN = "unknown"
 
 
@@ -30,15 +28,6 @@ def infer_weight_format(weight: torch.Tensor) -> WeightFormat:
         return WeightFormat.BF16
     if weight.dtype == torch.float32:
         return WeightFormat.FP32
-    if hasattr(torch, "float8_e4m3fn") and weight.dtype in (
-        torch.float8_e4m3fn,
-        getattr(torch, "float8_e5m2", None),
-    ):
-        return WeightFormat.FP8
-    if "float8" in str(weight.dtype):
-        return WeightFormat.FP8
-    if weight.dtype == torch.uint8:
-        return WeightFormat.INT4
     return WeightFormat.UNKNOWN
 
 

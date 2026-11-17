@@ -55,7 +55,6 @@ def test_runtime_executes_complete_pipeline() -> None:
     assert torch.allclose(output.hidden_states, expected)
     assert output.dispatch_plan.metadata.num_assignments == 2
     assert output.execution_plan.statistics.num_active_experts == 2
-    assert output.communication_plan.statistics.num_remote_experts == 0
     assert output.executor_output.statistics.num_executed_experts == 2
     assert output.merger_output.statistics.num_tokens == 2
     assert output.profile is not None
@@ -72,36 +71,6 @@ def test_runtime_workspace_reuse() -> None:
     assert runtime.context.workspaces.estimated_bytes() == first_bytes
     assert first_bytes > 0
 
-
-def test_runtime_creates_no_cuda_streams_for_cpu_reference_execution() -> None:
-    runtime = make_runtime()
-
-    runtime(torch.randn(1, 2, 4))
-
-    assert runtime.context.streams is not None
-    assert not runtime.context.streams.initialized
-
-
-def test_runtime_does_not_eagerly_allocate_unused_paged_kv_cache(monkeypatch) -> None:
-    class ExplodingKVCache:
-        def __init__(self, *args, **kwargs):
-            del args, kwargs
-            raise AssertionError("unused KV cache must not be constructed")
-
-    monkeypatch.setattr(runtime_module, "PagedKVCacheManager", ExplodingKVCache)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-
-    runtime = DWDPRuntime(
-        router=nn.Identity(),
-        dispatcher=nn.Identity(),
-        scheduler=nn.Identity(),
-        comms_planner=nn.Identity(),
-        executor=nn.Identity(),
-        merger=nn.Identity(),
-        config=RuntimeConfig(device="cuda"),
-    )
-
-    assert runtime.paged_kv_manager is None
 
 
 def test_runtime_config_validation() -> None:

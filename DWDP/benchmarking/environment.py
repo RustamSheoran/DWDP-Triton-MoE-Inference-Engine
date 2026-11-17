@@ -30,6 +30,19 @@ class EnvironmentMetadata:
     runtime_backend: str
     precision: str
     torch_compile: bool
+    requested_dtype: str | None = None
+    actual_dtype: str | None = None
+    compute_capability: str | None = None
+
+    def __post_init__(self) -> None:
+        req = self.requested_dtype or self.precision
+        act = self.actual_dtype or self.precision
+        if req != act:
+            raise ValueError(
+                f"Precision mismatch: requested_dtype '{req}' "
+                f"does not match actual_dtype '{act}'. "
+                f"Silent fallback is forbidden."
+            )
 
 
 def _package_version(name: str) -> str | None:
@@ -58,6 +71,8 @@ def collect_environment_metadata(
     runtime_backend: str,
     precision: str,
     torch_compile: bool,
+    requested_dtype: str | None = None,
+    actual_dtype: str | None = None,
     include_hostname: bool = True,
 ) -> EnvironmentMetadata:
     """Collect environment metadata without mutating benchmark state."""
@@ -67,6 +82,7 @@ def collect_environment_metadata(
     cudnn_version = None
     gpu_model = None
     gpu_memory_bytes = None
+    compute_capability = None
     try:
         import torch
 
@@ -79,6 +95,8 @@ def collect_environment_metadata(
             gpu_memory_bytes = int(
                 torch.cuda.get_device_properties(device).total_memory
             )
+            cap = torch.cuda.get_device_capability(device)
+            compute_capability = f"{cap[0]}.{cap[1]}"
     except Exception:
         pass
 
@@ -93,6 +111,9 @@ def collect_environment_metadata(
         nvidia_driver = result.stdout.splitlines()[0].strip()
     except Exception:
         nvidia_driver = None
+
+    req_dt = requested_dtype or precision
+    act_dt = actual_dtype or precision
 
     return EnvironmentMetadata(
         benchmark_timestamp=datetime.now(timezone.utc).isoformat(),
@@ -112,4 +133,7 @@ def collect_environment_metadata(
         runtime_backend=runtime_backend,
         precision=precision,
         torch_compile=torch_compile,
+        requested_dtype=req_dt,
+        actual_dtype=act_dt,
+        compute_capability=compute_capability,
     )
