@@ -15,6 +15,7 @@ from . import (
     scheduler,
 )
 from .runtime import DWDPRuntime, RuntimeConfig
+from .precision import get_device_precision_metadata, validate_execution_dtype
 
 __all__ = [
     "DWDPRuntime",
@@ -23,10 +24,12 @@ __all__ = [
     "benchmarking",
     "dispatcher",
     "executor",
+    "get_device_precision_metadata",
     "integration",
     "merger",
     "profiling",
     "router",
     "runtime",
     "scheduler",
+    "validate_execution_dtype",
 ]
