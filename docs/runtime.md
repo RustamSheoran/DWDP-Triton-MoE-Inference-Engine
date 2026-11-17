@@ -64,13 +64,6 @@ The stage implementations are not special-cased by the runtime. They are created
 - **Warmup Capture**: Captures static execution DAGs into a `torch.cuda.CUDAGraph()` during initial warmup passes.
 - **Zero CPU Tax Replay**: Replays token decode passes using `g.replay()`, eliminating 100% of CPU interpreter and module wrapper call tax (0 ms CPU tax).
 
-## PagedAttention Virtual Memory Manager
-
-[paged_attention.py](https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine/blob/main/DWDP/runtime/paged_attention.py) provides virtual memory page allocation for KV cache (`PagedKVCacheManager`).
-
-- **Block-Wise Allocation**: Allocates fixed physical memory blocks (`block_size=16`) to manage Key-Value Cache tensors.
-- **Memory Fragmentation Prevention**: Eliminates VRAM fragmentation across long sequence generation passes.
-
 ## Forward Path
 
 `DWDPRuntime.forward(hidden_states)` executes:
@@ -164,7 +157,6 @@ runtime = adapter.create_runtime()
 Model-specific automatic patching is intentionally not hard-coded into `DWDPRuntime`. Future adapters should implement architecture-specific extraction and replacement:
 
 - Qwen
-- Mixtral
 - DeepSeek
 - DBRX
 - JetMoE

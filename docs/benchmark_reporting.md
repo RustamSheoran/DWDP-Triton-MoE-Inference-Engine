@@ -6,7 +6,7 @@ DWDP benchmark reporting treats every benchmark run as a reproducible experiment
 
 ```text
 results/
-    2026-07-05_14-32-18_qwen15moe_a2.7b_hf_vs_dwdp_h100/
+    2026-07-05_14-32-18_qwen15moe_a2.7b_hf_vs_dwdp_t4/
         report.md
         report.json
         benchmark_config.json
@@ -73,7 +73,7 @@ The reporting layer does not execute benchmarks. It records the configuration an
 The schema reserves extension points for:
 
 - multi-GPU experiments
-- NVLink and PCIe statistics
+- PCIe statistics
 - communication overlap
 - weight prefetch statistics
 - CUDA stream timelines
