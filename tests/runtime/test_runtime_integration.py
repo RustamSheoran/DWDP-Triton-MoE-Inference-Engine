@@ -82,27 +82,6 @@ def test_runtime_creates_no_cuda_streams_for_cpu_reference_execution() -> None:
     assert not runtime.context.streams.initialized
 
 
-def test_runtime_does_not_eagerly_allocate_unused_paged_kv_cache(monkeypatch) -> None:
-    class ExplodingKVCache:
-        def __init__(self, *args, **kwargs):
-            del args, kwargs
-            raise AssertionError("unused KV cache must not be constructed")
-
-    monkeypatch.setattr(runtime_module, "PagedKVCacheManager", ExplodingKVCache)
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-
-    runtime = DWDPRuntime(
-        router=nn.Identity(),
-        dispatcher=nn.Identity(),
-        scheduler=nn.Identity(),
-        comms_planner=nn.Identity(),
-        executor=nn.Identity(),
-        merger=nn.Identity(),
-        config=RuntimeConfig(device="cuda"),
-    )
-
-    assert runtime.paged_kv_manager is None
-
 
 def test_runtime_config_validation() -> None:
     with pytest.raises(ValueError):

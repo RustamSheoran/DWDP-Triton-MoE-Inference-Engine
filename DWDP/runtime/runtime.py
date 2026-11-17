@@ -18,7 +18,6 @@ from .config import RuntimeConfig
 from .context import RuntimeContext
 from .correctness import CorrectnessReport, compare_tensors
 from .cuda_graph import CUDAGraphRunner
-from .paged_attention import PagedKVCacheManager
 from .pipeline import RuntimePipelineOutput
 from .profiler import RuntimeProfiler
 from .registry import register_runtime
@@ -50,10 +49,6 @@ class DWDPRuntime(nn.Module):
         self.adapter = adapter
         self.context = RuntimeContext.from_config(self.config)
         self.graph_runner = CUDAGraphRunner(self)
-        # Attention/KV ownership remains with the caller or Hugging Face model.
-        # The previous placeholder eagerly reserved a hard-coded 8 GiB cache
-        # even though no runtime path consumed it.
-        self.paged_kv_manager: PagedKVCacheManager | None = None
 
         # Enable FlashAttention SDPA & TF32 Tensor Cores
         if torch.cuda.is_available():
