@@ -11,9 +11,11 @@ Follow these steps to run the DWDP GPU parity tests and MoE layer benchmark on a
 Paste the following block into a code cell and run it:
 
 ```python
+%cd /content
+!rm -rf /content/repo
 !git clone -b cleanup https://github.com/RustamSheoran/DWDP-Triton-MoE-Inference-Engine.git repo
-%cd repo
-!bash scripts/run_on_gpu.sh
+%cd /content/repo
+!bash scripts/run_on_gpu.sh --diagnose
 import os
 from google.colab import files
 z = "moe_t4_results.zip"
