@@ -1,6 +1,5 @@
 from DWDP.executor.kernels.fp4_packing import unpack_nvfp4_weights
 from DWDP.executor.kernels.fp8_microscaling import fp8_microscaled_gemm
-from DWDP.executor.kernels.mla_absorption import absorb_mla_weights
 
 from .config import RuntimeConfig
 from .context import RuntimeContext, RuntimeWorkspaces
@@ -22,7 +21,6 @@ __all__ = [
     "RuntimeProfiler",
     "RuntimeWorkspaces",
     "TensorComparison",
-    "absorb_mla_weights",
     "compare_tensors",
     "fp8_microscaled_gemm",
     "unpack_nvfp4_weights",
