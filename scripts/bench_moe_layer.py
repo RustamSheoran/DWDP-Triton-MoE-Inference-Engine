@@ -125,7 +125,9 @@ def baseline_b_sorted_matmul(
     sorted_tokens = token_indices[sort_perm]
     sorted_weights = flat_weights[sort_perm].unsqueeze(1)
     x_sorted = x[sorted_tokens]
-    expert_counts = torch.bincount(sorted_expert_ids, minlength=num_experts)
+    expert_counts = torch.zeros(num_experts, dtype=torch.long, device=x.device).scatter_add_(
+        0, sorted_expert_ids, torch.ones_like(sorted_expert_ids)
+    )
     offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=x.device)
     offsets[1:] = torch.cumsum(expert_counts, dim=0)
 
@@ -179,7 +181,9 @@ def baseline_b2_sorted_matmul_single_sync(
     sorted_tokens = token_indices[sort_perm]
     sorted_weights = flat_weights[sort_perm].unsqueeze(1)
     x_sorted = x[sorted_tokens]
-    expert_counts = torch.bincount(sorted_expert_ids, minlength=num_experts)
+    expert_counts = torch.zeros(num_experts, dtype=torch.long, device=x.device).scatter_add_(
+        0, sorted_expert_ids, torch.ones_like(sorted_expert_ids)
+    )
     offsets = torch.zeros(num_experts + 1, dtype=torch.long, device=x.device)
     offsets[1:] = torch.cumsum(expert_counts, dim=0)
 

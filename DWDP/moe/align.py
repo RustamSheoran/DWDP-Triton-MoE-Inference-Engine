@@ -76,7 +76,8 @@ def align_tokens_by_expert(
             top_k=top_k,
         )
 
-    num_blocks_ub = (num_tokens * top_k + num_experts * (block_size - 1) + block_size - 1) // block_size
+    total_assignments = num_tokens * top_k
+    num_blocks_ub = (total_assignments + num_experts * (block_size - 1) + block_size - 1) // block_size
     max_padded = num_blocks_ub * block_size
 
     # 1. Flatten expert assignments and weights
@@ -91,8 +92,10 @@ def align_tokens_by_expert(
     # 2. Stable sort by expert id
     sorted_expert_ids, sort_perm = torch.sort(flat_expert_ids, stable=True)
 
-    # 3. Expert token counts & padded counts
-    counts = torch.bincount(flat_expert_ids, minlength=num_experts)
+    # 3. Expert token counts via scatter_add_ (zero sync; unlike bincount which calls .max().item())
+    counts = torch.zeros(num_experts, dtype=torch.int64, device=device).scatter_add_(
+        0, flat_expert_ids, torch.ones_like(flat_expert_ids)
+    )
     padded_counts = ((counts + block_size - 1) // block_size) * block_size
 
     # 4. Expert start and end offsets in padded and unpadded space
@@ -101,7 +104,7 @@ def align_tokens_by_expert(
     unpadded_start = torch.cumsum(counts, dim=0) - counts
 
     # 5. Compute scatter destinations for each sorted token
-    intra_expert_idx = torch.arange(len(sorted_expert_ids), device=device) - unpadded_start[sorted_expert_ids]
+    intra_expert_idx = torch.arange(total_assignments, device=device) - unpadded_start[sorted_expert_ids]
     dest_idx = padded_start[sorted_expert_ids] + intra_expert_idx
 
     # 6. Allocate static upper-bound output buffers (zero host sync)

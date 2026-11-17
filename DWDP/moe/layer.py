@@ -50,6 +50,13 @@ def triton_moe_layer(
     intermediate_dim = double_intermediate_dim // 2
     top_k = topk_indices.shape[1]
 
+    if hidden_states.device.type == "cpu" and torch.cuda.is_available() and os.environ.get("TRITON_INTERPRET") != "1":
+        raise ValueError(
+            "triton_moe_layer received CPU tensors on a system with CUDA available. "
+            "Compiled Triton CUDA kernels require CUDA device tensors (e.g., hidden_states.cuda()). "
+            "To test on CPU with Triton interpreter, set TRITON_INTERPRET=1."
+        )
+
     if num_tokens == 0:
         return torch.zeros((0, hidden_dim), dtype=hidden_states.dtype, device=hidden_states.device)
 

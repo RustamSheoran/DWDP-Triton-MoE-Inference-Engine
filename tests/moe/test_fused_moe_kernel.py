@@ -28,15 +28,21 @@ from DWDP.moe.reference import moe_reference, moe_reference_grouped
 
 
 @pytest.fixture
-def moe_weights():
-    """Create tiny FP16 weights suitable for CPU interpretation."""
+def moe_device():
+    """Return device to run tests on: cuda if available, else cpu."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@pytest.fixture
+def moe_weights(moe_device):
+    """Create tiny FP16 weights on the active test device."""
     torch.manual_seed(42)
     hidden_dim = 64
     intermediate_dim = 32
     num_experts = 8
 
-    w1 = torch.randn(num_experts, 2 * intermediate_dim, hidden_dim, dtype=torch.float16) * 0.05
-    w2 = torch.randn(num_experts, hidden_dim, intermediate_dim, dtype=torch.float16) * 0.05
+    w1 = torch.randn(num_experts, 2 * intermediate_dim, hidden_dim, dtype=torch.float16, device=moe_device) * 0.05
+    w2 = torch.randn(num_experts, hidden_dim, intermediate_dim, dtype=torch.float16, device=moe_device) * 0.05
 
     return {
         "hidden_dim": hidden_dim,
@@ -44,6 +50,7 @@ def moe_weights():
         "num_experts": num_experts,
         "w1": w1,
         "w2": w2,
+        "device": moe_device,
     }
 
 
@@ -68,29 +75,30 @@ def _verify_parity(out: torch.Tensor, ref: torch.Tensor, test_name: str, atol: f
 
 @pytest.mark.parametrize("num_tokens", [0, 1, 3, 17, 64])
 def test_triton_moe_token_counts(moe_weights, num_tokens):
-    """Test token counts in {0, 1, 3, 17, 64} on CPU."""
+    """Test token counts in {0, 1, 3, 17, 64} on active device."""
     hidden_dim = moe_weights["hidden_dim"]
     num_experts = moe_weights["num_experts"]
     w1 = moe_weights["w1"]
     w2 = moe_weights["w2"]
+    device = moe_weights["device"]
     top_k = 2
 
     torch.manual_seed(100 + num_tokens)
     if num_tokens > 0:
-        x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16)
-        topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64)
-        topk_weights = torch.softmax(torch.randn(num_tokens, top_k), dim=-1).half()
+        x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+        topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64, device=device)
+        topk_weights = torch.softmax(torch.randn(num_tokens, top_k, device=device), dim=-1).half()
     else:
-        x = torch.empty(0, hidden_dim, dtype=torch.float16)
-        topk_indices = torch.empty(0, top_k, dtype=torch.int64)
-        topk_weights = torch.empty(0, top_k, dtype=torch.float16)
+        x = torch.empty(0, hidden_dim, dtype=torch.float16, device=device)
+        topk_indices = torch.empty(0, top_k, dtype=torch.int64, device=device)
+        topk_weights = torch.empty(0, top_k, dtype=torch.float16, device=device)
 
     out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=16, block_n=16, block_k=16)
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
     assert out.shape == (num_tokens, hidden_dim)
     assert out.dtype == torch.float16
-    _verify_parity(out, ref, f"CPU T={num_tokens}")
+    _verify_parity(out, ref, f"T={num_tokens}")
 
 
 @pytest.mark.parametrize("top_k", [1, 2, 4])
@@ -101,16 +109,17 @@ def test_triton_moe_top_k(moe_weights, top_k):
     num_experts = moe_weights["num_experts"]
     w1 = moe_weights["w1"]
     w2 = moe_weights["w2"]
+    device = moe_weights["device"]
 
     torch.manual_seed(200 + top_k)
-    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16)
-    topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64)
-    topk_weights = torch.softmax(torch.randn(num_tokens, top_k), dim=-1).half()
+    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+    topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64, device=device)
+    topk_weights = torch.softmax(torch.randn(num_tokens, top_k, device=device), dim=-1).half()
 
     out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=16, block_n=16, block_k=16)
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
-    _verify_parity(out, ref, f"CPU top_k={top_k}")
+    _verify_parity(out, ref, f"top_k={top_k}")
 
 
 def test_triton_moe_zero_token_experts(moe_weights):
@@ -119,18 +128,19 @@ def test_triton_moe_zero_token_experts(moe_weights):
     hidden_dim = moe_weights["hidden_dim"]
     w1 = moe_weights["w1"]
     w2 = moe_weights["w2"]
+    device = moe_weights["device"]
     top_k = 2
 
     # Route only to experts 0, 1, 2 (leaving experts 3..7 empty)
     torch.manual_seed(300)
-    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16)
-    topk_indices = torch.randint(0, 3, (num_tokens, top_k), dtype=torch.int64)
-    topk_weights = torch.softmax(torch.randn(num_tokens, top_k), dim=-1).half()
+    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+    topk_indices = torch.randint(0, 3, (num_tokens, top_k), dtype=torch.int64, device=device)
+    topk_weights = torch.softmax(torch.randn(num_tokens, top_k, device=device), dim=-1).half()
 
     out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=16, block_n=16, block_k=16)
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
-    _verify_parity(out, ref, "CPU Zero Token Experts")
+    _verify_parity(out, ref, "Zero Token Experts")
 
 
 def test_triton_moe_skewed_all_one_expert(moe_weights):
@@ -139,21 +149,23 @@ def test_triton_moe_skewed_all_one_expert(moe_weights):
     hidden_dim = moe_weights["hidden_dim"]
     w1 = moe_weights["w1"]
     w2 = moe_weights["w2"]
+    device = moe_weights["device"]
     top_k = 2
 
     torch.manual_seed(400)
-    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16)
-    topk_indices = torch.zeros((num_tokens, top_k), dtype=torch.int64)
-    topk_weights = torch.tensor([[0.7, 0.3]], dtype=torch.float16).repeat(num_tokens, 1)
+    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+    topk_indices = torch.zeros((num_tokens, top_k), dtype=torch.int64, device=device)
+    topk_weights = torch.tensor([[0.7, 0.3]], dtype=torch.float16, device=device).repeat(num_tokens, 1)
 
     out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=16, block_n=16, block_k=16)
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
-    _verify_parity(out, ref, "CPU All Tokens to Expert 0")
+    _verify_parity(out, ref, "All Tokens to Expert 0")
 
 
 def test_triton_moe_non_divisible_shapes():
     """Test dimensions not divisible by block sizes (H=50, I=25, block=16)."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(500)
     hidden_dim = 50
     intermediate_dim = 25
@@ -161,16 +173,16 @@ def test_triton_moe_non_divisible_shapes():
     num_tokens = 11
     top_k = 2
 
-    w1 = torch.randn(num_experts, 2 * intermediate_dim, hidden_dim, dtype=torch.float16) * 0.05
-    w2 = torch.randn(num_experts, hidden_dim, intermediate_dim, dtype=torch.float16) * 0.05
-    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16)
-    topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64)
-    topk_weights = torch.softmax(torch.randn(num_tokens, top_k), dim=-1).half()
+    w1 = torch.randn(num_experts, 2 * intermediate_dim, hidden_dim, dtype=torch.float16, device=device) * 0.05
+    w2 = torch.randn(num_experts, hidden_dim, intermediate_dim, dtype=torch.float16, device=device) * 0.05
+    x = torch.randn(num_tokens, hidden_dim, dtype=torch.float16, device=device)
+    topk_indices = torch.randint(0, num_experts, (num_tokens, top_k), dtype=torch.int64, device=device)
+    topk_weights = torch.softmax(torch.randn(num_tokens, top_k, device=device), dim=-1).half()
 
     out = triton_moe_layer(x, w1, w2, topk_indices, topk_weights, block_m=16, block_n=16, block_k=16)
     ref = moe_reference(x, w1, w2, topk_indices, topk_weights)
 
-    _verify_parity(out, ref, "CPU Non-divisible Shapes (H=50, I=25)")
+    _verify_parity(out, ref, "Non-divisible Shapes (H=50, I=25)")
 
 
 # ==============================================================================
