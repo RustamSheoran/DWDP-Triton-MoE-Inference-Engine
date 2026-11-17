@@ -7,6 +7,7 @@ Provides clean, verifiable, and high-performance FP16 MoE kernels:
 - layer: Complete end-to-end MoE layer orchestration.
 """
 
+from .align import AlignedMoEData, align_tokens_by_expert
 from .reference import moe_reference
 
-__all__ = ["moe_reference"]
+__all__ = ["AlignedMoEData", "align_tokens_by_expert", "moe_reference"]
